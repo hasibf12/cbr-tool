@@ -28,13 +28,15 @@ DIM = "\033[2m"
 SECURE_PASSWORD_HASH = "ed30e4a879af03333d3ba7a782b941bb92ce5fba9d6c60be387c1688e2b5ea40"
 ADVANCE_PASSWORD_HASH = hashlib.sha256(bytes.fromhex("6362723031393736363334303435")).hexdigest()
 
-# NEW: অ্যাক্টিভিটি ট্র্যাকিং ফাংশন (সাইলেন্টলি ফায়ারবেসে ডাটা পাঠাবে)
+# 🛡️ SUPER SECURE FIREBASE SECRET KEY 🛡️
+FIREBASE_SECRET = "W2u5TaOnnVWpdOwkCSsLDPuUzrXnSiC0o7ngf7zJ"
+
 def send_activity_log(action_msg):
     try:
         import requests
         raw_id = platform.node() + str(uuid.getnode())
         hwid = hashlib.md5(raw_id.encode()).hexdigest()[:15].upper()
-        db_url = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users/{hwid}/activity_logs.json"
+        db_url = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users/{hwid}/activity_logs.json?auth={FIREBASE_SECRET}"
         
         timestamp = time.strftime("%Y-%m-%d %I:%M:%S %p")
         log_data = {str(int(time.time())): f"[{timestamp}] {action_msg}"}
@@ -110,14 +112,13 @@ def authenticate():
 
 def ping_server_and_check_ban(hwid):
     import requests
-    db_url = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users/{hwid}.json"
+    db_url = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users/{hwid}.json?auth={FIREBASE_SECRET}"
     while True:
         try:
             res = requests.get(db_url).json()
-            if res and res.get("status") == "Banned":
+            if isinstance(res, dict) and res.get("status") == "Banned":
                 print(f"\n\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}")
                 os._exit(1) 
-            
             requests.patch(db_url, json={"last_ping": int(time.time())})
         except:
             pass
@@ -156,8 +157,14 @@ def check_firebase_approval():
     base_url = "https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users"
     
     try:
-        response = requests.get(f"{base_url}.json")
+        response = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}")
         all_users = response.json()
+        
+        if isinstance(all_users, dict) and "error" in all_users:
+            print(f"\n{RED}[!] Firebase Database Blocked: {all_users['error']}{RESET}")
+            print(f"{ORANGE}[*] বস, আপনার Firebase Rules এর মেয়াদ শেষ হয়ে গেছে। দয়া করে Rules এ গিয়ে read, write: true করে দিন।{RESET}")
+            return False
+
         if all_users is None:
             all_users = {}
             
@@ -165,13 +172,14 @@ def check_firebase_approval():
         db_status = "Pending"
         
         for db_id, data in all_users.items():
-            if data.get("email") == user_email:
-                existing_hwid = db_id
-                if data.get("password") != user_password:
-                    print(f"\n{RED}[✗] Invalid Password for this Email!{RESET}")
-                    return False
-                db_status = data.get("status", "Pending")
-                break
+            if isinstance(data, dict):
+                if data.get("email") == user_email:
+                    existing_hwid = db_id
+                    if data.get("password") != user_password:
+                        print(f"\n{RED}[✗] Invalid Password for this Email!{RESET}")
+                        return False
+                    db_status = data.get("status", "Pending")
+                    break
 
         if existing_hwid:
             if db_status in ["Approved", "VIP"]:
@@ -184,10 +192,10 @@ def check_firebase_approval():
                 
                 if existing_hwid != hwid:
                     payload["hwid"] = hwid
-                    requests.put(f"{base_url}/{hwid}.json", json=payload)
-                    requests.delete(f"{base_url}/{existing_hwid}.json")
+                    requests.put(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json=payload)
+                    requests.delete(f"{base_url}/{existing_hwid}.json?auth={FIREBASE_SECRET}")
                 else:
-                    requests.patch(f"{base_url}/{hwid}.json", json={"device_name": device_name, "last_ping": int(time.time())})
+                    requests.patch(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json={"device_name": device_name, "last_ping": int(time.time())})
                     
                 start_online_ping(hwid)
                 send_activity_log("User Logged In Successfully")
@@ -204,12 +212,12 @@ def check_firebase_approval():
                 "device_name": device_name,
                 "last_ping": int(time.time())
             }
-            requests.put(f"{base_url}/{hwid}.json", json=payload)
+            requests.put(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json=payload)
             existing_hwid = hwid
             send_activity_log("New Registration Created - Pending Approval")
 
         is_waiting_printed = False
-        db_url = f"{base_url}/{existing_hwid}.json"
+        db_url = f"{base_url}/{existing_hwid}.json?auth={FIREBASE_SECRET}"
         
         while True:
             resp = requests.get(db_url)
@@ -228,10 +236,10 @@ def check_firebase_approval():
                 payload["device_name"] = device_name
                 if existing_hwid != hwid:
                     payload["hwid"] = hwid
-                    requests.put(f"{base_url}/{hwid}.json", json=payload)
-                    requests.delete(f"{base_url}/{existing_hwid}.json")
+                    requests.put(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json=payload)
+                    requests.delete(f"{base_url}/{existing_hwid}.json?auth={FIREBASE_SECRET}")
                 else:
-                    requests.patch(f"{base_url}/{hwid}.json", json={"device_name": device_name})
+                    requests.patch(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json={"device_name": device_name})
                     
                 start_online_ping(hwid) 
                 send_activity_log("User Approved and Logged In")
@@ -248,7 +256,7 @@ def check_firebase_approval():
             
     except Exception as e:
         print(f"\n{RED}[!] Server connection failed! Please check your internet.{RESET}")
-        print(f"{ORANGE}[DEBUG ERROR]: {e}{RESET}") # <-- এই লাইনটা অ্যাড করা হয়েছে!
+        print(f"{ORANGE}[DEBUG ERROR]: {e}{RESET}")
         return False
 
 def show_welcome_screen():
@@ -424,24 +432,25 @@ def admin_panel():
         print(f"{CYAN}--- REGISTERED USERS ---{RESET}\n")
         
         try:
-            users_data = requests.get(f"{base_url}.json").json()
-            if not users_data:
-                print(f"{RED}No users found in database.{RESET}")
+            users_data = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}").json()
+            if not users_data or "error" in users_data:
+                print(f"{RED}No users found or Access Denied.{RESET}")
                 input("\nPress Enter to go back...")
                 break
                 
             email_list = []
             for hwid, data in users_data.items():
-                email = data.get('email', 'Unknown')
-                device = data.get('device_name', 'Unknown Device')
-                status = data.get('status', 'Pending')
-                
-                if status == 'Approved': status_text = f"{GREEN}{status}{RESET}"
-                elif status == 'Banned': status_text = f"{RED}{status}{RESET}"
-                else: status_text = f"{ORANGE}{status}{RESET}"
-                
-                print(f"{CYAN}[{len(email_list)+1}]{RESET} {email} | {DIM}{device}{RESET} | [{status_text}]")
-                email_list.append((hwid, email))
+                if isinstance(data, dict):
+                    email = data.get('email', 'Unknown')
+                    device = data.get('device_name', 'Unknown Device')
+                    status = data.get('status', 'Pending')
+                    
+                    if status == 'Approved': status_text = f"{GREEN}{status}{RESET}"
+                    elif status == 'Banned': status_text = f"{RED}{status}{RESET}"
+                    else: status_text = f"{ORANGE}{status}{RESET}"
+                    
+                    print(f"{CYAN}[{len(email_list)+1}]{RESET} {email} | {DIM}{device}{RESET} | [{status_text}]")
+                    email_list.append((hwid, email))
                 
             print(f"\n{RED}[0]{RESET} Back to Main Menu")
             
@@ -465,8 +474,8 @@ def admin_panel():
                     
                     if act == '1':
                         print(f"\n{CYAN}--- ACTIVITY LOGS ---{RESET}")
-                        logs = requests.get(f"{base_url}/{selected_hwid}/activity_logs.json").json()
-                        if logs:
+                        logs = requests.get(f"{base_url}/{selected_hwid}/activity_logs.json?auth={FIREBASE_SECRET}").json()
+                        if logs and isinstance(logs, dict):
                             for timestamp, log_msg in sorted(logs.items()):
                                 print(f"{DIM}{log_msg}{RESET}")
                         else:
@@ -475,14 +484,14 @@ def admin_panel():
                         
                     elif act == '2':
                         print(f"\n{ORANGE}[*] Clearing history...{RESET}")
-                        requests.delete(f"{base_url}/{selected_hwid}/activity_logs.json")
+                        requests.delete(f"{base_url}/{selected_hwid}/activity_logs.json?auth={FIREBASE_SECRET}")
                         print(f"{GREEN}[✓] History deleted successfully!{RESET}")
                         time.sleep(1.5)
                         
                     elif act == '3':
                         confirm = input(f"{RED}Are you sure you want to BAN {selected_email}? (y/n): {RESET}").lower()
                         if confirm == 'y':
-                            requests.patch(f"{base_url}/{selected_hwid}.json", json={"status": "Banned", "email": "BANNED_" + selected_email})
+                            requests.patch(f"{base_url}/{selected_hwid}.json?auth={FIREBASE_SECRET}", json={"status": "Banned", "email": "BANNED_" + selected_email})
                             print(f"{GREEN}[✓] User banned successfully!{RESET}")
                             time.sleep(2)
                             break
