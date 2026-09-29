@@ -472,23 +472,48 @@ def cbr_smart_flasher():
 
     extract_folder = os.path.join(rom_dir, "CBR_Extracted_ROM")
     print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
-    print(f"{DIM}Please wait, this may take a few minutes without glitches...{RESET}")
+    print(f"{DIM}Please wait, calculating total size...{RESET}")
     
+    # --- NEW LIVE PROGRESS BAR & ANTI-HANG EXTRACTION ---
     try:
         if os.path.exists(extract_folder):
             shutil.rmtree(extract_folder)
         os.makedirs(extract_folder)
         
         if selected_rom.endswith('.zip'):
-            with zipfile.ZipFile(selected_rom, 'r') as zip_ref:
-                zip_ref.extractall(extract_folder)
+            with zipfile.ZipFile(selected_rom, 'r') as zf:
+                infos = zf.infolist()
+                total_size = sum(info.file_size for info in infos)
+                extracted_size = 0
+                for info in infos:
+                    zf.extract(info, extract_folder)
+                    extracted_size += info.file_size
+                    percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
+                    mb_ex = extracted_size / (1024 * 1024)
+                    mb_tot = total_size / (1024 * 1024)
+                    # \r forces the terminal to update the same line over and over (Anti-Hang Hack)
+                    print(f"\r{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB   ", end="")
+                    sys.stdout.flush()
         else:
-            with tarfile.open(selected_rom, 'r:*') as tar_ref:
-                tar_ref.extractall(extract_folder)
-        print(f"{GREEN}[✓] Extraction Complete!{RESET}")
+            with tarfile.open(selected_rom, 'r:*') as tf:
+                members = tf.getmembers()
+                total_size = sum(m.size for m in members)
+                extracted_size = 0
+                for m in members:
+                    tf.extract(m, extract_folder)
+                    extracted_size += m.size
+                    percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
+                    mb_ex = extracted_size / (1024 * 1024)
+                    mb_tot = total_size / (1024 * 1024)
+                    # \r forces the terminal to update the same line over and over (Anti-Hang Hack)
+                    print(f"\r{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB   ", end="")
+                    sys.stdout.flush()
+                    
+        print(f"\n{GREEN}[✓] Extraction Complete!{RESET}")
     except Exception as e:
-        print(f"{RED}[!] Extraction Failed: {e}{RESET}")
+        print(f"\n{RED}[!] Extraction Failed: {e}{RESET}")
         return
+    # ----------------------------------------------------
 
     sh_file = None
     for root, dirs, files in os.walk(extract_folder):
