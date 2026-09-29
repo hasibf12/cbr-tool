@@ -472,9 +472,9 @@ def cbr_smart_flasher():
 
     extract_folder = os.path.join(rom_dir, "CBR_Extracted_ROM")
     print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
-    print(f"{DIM}Please wait, calculating total size...{RESET}")
+    print(f"{DIM}Please wait, calculating total size...{RESET}\n")
     
-    # --- NEW LIVE PROGRESS BAR & ANTI-HANG EXTRACTION ---
+    # --- STATIC LIVE PROGRESS BAR (FIXED: NO NEW LINES) ---
     try:
         if os.path.exists(extract_folder):
             shutil.rmtree(extract_folder)
@@ -491,8 +491,8 @@ def cbr_smart_flasher():
                     percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
                     mb_ex = extracted_size / (1024 * 1024)
                     mb_tot = total_size / (1024 * 1024)
-                    # \r forces the terminal to update the same line over and over (Anti-Hang Hack)
-                    print(f"\r{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB   ", end="")
+                    # Use \r to overwrite the same line. Added spaces to clear any leftover characters.
+                    sys.stdout.write(f"\r{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB          ")
                     sys.stdout.flush()
         else:
             with tarfile.open(selected_rom, 'r:*') as tf:
@@ -505,13 +505,13 @@ def cbr_smart_flasher():
                     percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
                     mb_ex = extracted_size / (1024 * 1024)
                     mb_tot = total_size / (1024 * 1024)
-                    # \r forces the terminal to update the same line over and over (Anti-Hang Hack)
-                    print(f"\r{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB   ", end="")
+                    # Use \r to overwrite the same line. Added spaces to clear any leftover characters.
+                    sys.stdout.write(f"\r{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB          ")
                     sys.stdout.flush()
                     
-        print(f"\n{GREEN}[✓] Extraction Complete!{RESET}")
+        print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
     except Exception as e:
-        print(f"\n{RED}[!] Extraction Failed: {e}{RESET}")
+        print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
         return
     # ----------------------------------------------------
 
