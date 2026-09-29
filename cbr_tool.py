@@ -474,7 +474,7 @@ def cbr_smart_flasher():
     print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
     print(f"{DIM}Please wait, calculating total size...{RESET}\n")
     
-    # --- STATIC LIVE PROGRESS BAR (FIXED: NO NEW LINES) ---
+    # --- TRUE STATIC LINE (PERFECT FIX) ---
     try:
         if os.path.exists(extract_folder):
             shutil.rmtree(extract_folder)
@@ -491,8 +491,7 @@ def cbr_smart_flasher():
                     percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
                     mb_ex = extracted_size / (1024 * 1024)
                     mb_tot = total_size / (1024 * 1024)
-                    # Use \r to overwrite the same line. Added spaces to clear any leftover characters.
-                    sys.stdout.write(f"\r{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB          ")
+                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
                     sys.stdout.flush()
         else:
             with tarfile.open(selected_rom, 'r:*') as tf:
@@ -505,8 +504,7 @@ def cbr_smart_flasher():
                     percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
                     mb_ex = extracted_size / (1024 * 1024)
                     mb_tot = total_size / (1024 * 1024)
-                    # Use \r to overwrite the same line. Added spaces to clear any leftover characters.
-                    sys.stdout.write(f"\r{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB          ")
+                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
                     sys.stdout.flush()
                     
         print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
