@@ -489,7 +489,6 @@ def cbr_smart_flasher():
     print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
     print(f"{DIM}Please wait, calculating total size...{RESET}\n")
     
-    # --- TRUE STATIC LINE (DIRECTORY ERROR FIXED) ---
     try:
         if os.path.exists(extract_folder):
             shutil.rmtree(extract_folder)
@@ -502,21 +501,17 @@ def cbr_smart_flasher():
                 extracted_size = 0
                 for info in infos:
                     target_path = os.path.join(extract_folder, info.filename)
-                    # FIX: Handle directory paths in ZIP properly
                     if info.is_dir() or info.filename.endswith('/'):
                         os.makedirs(target_path, exist_ok=True)
                         continue
                     
-                    # Ensure parent directories exist before extracting file
                     os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                    
-                    # FIX for Errno 21: Skip if target is already a directory
                     if os.path.isdir(target_path):
                         continue
                     
                     with zf.open(info) as source, open(target_path, 'wb') as target:
                         while True:
-                            chunk = source.read(1024 * 1024) # 1MB chunk
+                            chunk = source.read(1024 * 1024) 
                             if not chunk:
                                 break
                             target.write(chunk)
@@ -533,15 +528,11 @@ def cbr_smart_flasher():
                 extracted_size = 0
                 for m in members:
                     target_path = os.path.join(extract_folder, m.name)
-                    # FIX: Handle directory paths in TAR properly
                     if m.isdir() or m.name.endswith('/'):
                         os.makedirs(target_path, exist_ok=True)
                         continue
                         
-                    # Ensure parent directories exist before extracting file
                     os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                    
-                    # FIX for Errno 21: Skip if target is already a directory
                     if os.path.isdir(target_path):
                         continue
                     
@@ -549,7 +540,7 @@ def cbr_smart_flasher():
                     if f:
                         with open(target_path, 'wb') as target:
                             while True:
-                                chunk = f.read(1024 * 1024) # 1MB chunk
+                                chunk = f.read(1024 * 1024) 
                                 if not chunk:
                                     break
                                 target.write(chunk)
@@ -564,7 +555,6 @@ def cbr_smart_flasher():
     except Exception as e:
         print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
         return
-    # ----------------------------------------------------
 
     sh_file = None
     for root, dirs, files in os.walk(extract_folder):
@@ -598,6 +588,7 @@ def cbr_smart_flasher():
     with open(sh_file, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.readlines()
 
+    # --- THE ULTIMATE ANTI-HANG LIVE STREAMING ENGINE ---
     for line in lines:
         line = line.strip()
         if line.startswith('fastboot'):
@@ -607,27 +598,38 @@ def cbr_smart_flasher():
             success = False
             for attempt in range(3):
                 print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
-                res = os.system(cmd)
-                if res == 0:
+                
+                # লাইভ আউটপুট স্ট্রিমিং (Mi Flash Tool এর মতো)
+                # এই ইঞ্জিন টার্মাক্সকে কখনোই ঘুমাতে দেবে না!
+                process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                
+                for out_line in process.stdout:
+                    # লাইভ আউটপুট স্ক্রিনে প্রিন্ট হবে
+                    print(f"{DIM}   >> {out_line.strip()}{RESET}")
+                
+                process.wait()
+                
+                if process.returncode == 0:
                     success = True
                     break
                 else:
                     print(f"{RED}[!] Failed. OTG Retry ({attempt+1}/3)...{RESET}")
-                    time.sleep(2)
+                    time.sleep(3)
                     
             if not success:
                 print(f"{RED}[!] Skipping partition after 3 failures to prevent brick.{RESET}")
                 
-            time.sleep(2)
-            os.system("fastboot getvar product > /dev/null 2>&1") 
+            time.sleep(2) # Safe Breathing Delay
+            # ডামি কমান্ড দিয়ে কানেকশন জিন্দা রাখা
+            subprocess.run("fastboot getvar product > /dev/null 2>&1", shell=True) 
 
     if lock_choice == '2':
         print(f"\n{ORANGE}[LOCKING BOOTLOADER]{RESET}")
-        os.system("fastboot oem lock")
+        subprocess.run("fastboot oem lock", shell=True)
         
     print(f"\n{GREEN}[✓] FLASHING COMPLETED SUCCESSFULLY!{RESET}")
     print(f"{CYAN}[*] Rebooting Phone...{RESET}")
-    os.system("fastboot reboot")
+    subprocess.run("fastboot reboot", shell=True)
     send_activity_log("Successfully Completed ROM Flashing")
 
 def admin_panel():
