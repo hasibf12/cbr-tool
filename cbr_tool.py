@@ -474,7 +474,7 @@ def cbr_smart_flasher():
     print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
     print(f"{DIM}Please wait, calculating total size...{RESET}\n")
     
-    # --- TRUE STATIC LINE (PERFECT FIX) ---
+    # --- SMOOTH CHUNK-BASED LIVE PROGRESS BAR ---
     try:
         if os.path.exists(extract_folder):
             shutil.rmtree(extract_folder)
@@ -486,26 +486,44 @@ def cbr_smart_flasher():
                 total_size = sum(info.file_size for info in infos)
                 extracted_size = 0
                 for info in infos:
-                    zf.extract(info, extract_folder)
-                    extracted_size += info.file_size
-                    percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
-                    mb_ex = extracted_size / (1024 * 1024)
-                    mb_tot = total_size / (1024 * 1024)
-                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
-                    sys.stdout.flush()
+                    # Extract file by reading chunks for smooth live update
+                    with zf.open(info) as source, open(os.path.join(extract_folder, info.filename), 'wb') as target:
+                        while True:
+                            chunk = source.read(1024 * 1024) # 1MB chunk
+                            if not chunk:
+                                break
+                            target.write(chunk)
+                            extracted_size += len(chunk)
+                            percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
+                            mb_ex = extracted_size / (1024 * 1024)
+                            mb_tot = total_size / (1024 * 1024)
+                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
+                            sys.stdout.flush()
         else:
             with tarfile.open(selected_rom, 'r:*') as tf:
                 members = tf.getmembers()
                 total_size = sum(m.size for m in members)
                 extracted_size = 0
                 for m in members:
-                    tf.extract(m, extract_folder)
-                    extracted_size += m.size
-                    percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
-                    mb_ex = extracted_size / (1024 * 1024)
-                    mb_tot = total_size / (1024 * 1024)
-                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
-                    sys.stdout.flush()
+                    # Handle directories
+                    if m.isdir():
+                        os.makedirs(os.path.join(extract_folder, m.name), exist_ok=True)
+                        continue
+                    # Extract file by reading chunks for smooth live update
+                    f = tf.extractfile(m)
+                    if f:
+                        with open(os.path.join(extract_folder, m.name), 'wb') as target:
+                            while True:
+                                chunk = f.read(1024 * 1024) # 1MB chunk
+                                if not chunk:
+                                    break
+                                target.write(chunk)
+                                extracted_size += len(chunk)
+                                percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
+                                mb_ex = extracted_size / (1024 * 1024)
+                                mb_tot = total_size / (1024 * 1024)
+                                sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
+                                sys.stdout.flush()
                     
         print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
     except Exception as e:
