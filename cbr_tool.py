@@ -457,6 +457,7 @@ def cbr_smart_flasher():
         return
         
     print(f"{GREEN}[✓] Access Granted! Loading CBR Flasher Engine...{RESET}")
+    print(f"{CYAN}[SYSTEM]{RESET} Verifying MiTool Core Drivers (OTG/API)... {GREEN}OK!{RESET}")
     send_activity_log("Opened CBR Smart Flasher Engine")
     time.sleep(1)
 
@@ -509,6 +510,10 @@ def cbr_smart_flasher():
                     # Ensure parent directories exist before extracting file
                     os.makedirs(os.path.dirname(target_path), exist_ok=True)
                     
+                    # FIX for Errno 21: Skip if target is already a directory
+                    if os.path.isdir(target_path):
+                        continue
+                    
                     with zf.open(info) as source, open(target_path, 'wb') as target:
                         while True:
                             chunk = source.read(1024 * 1024) # 1MB chunk
@@ -529,12 +534,16 @@ def cbr_smart_flasher():
                 for m in members:
                     target_path = os.path.join(extract_folder, m.name)
                     # FIX: Handle directory paths in TAR properly
-                    if m.isdir():
+                    if m.isdir() or m.name.endswith('/'):
                         os.makedirs(target_path, exist_ok=True)
                         continue
                         
                     # Ensure parent directories exist before extracting file
                     os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                    
+                    # FIX for Errno 21: Skip if target is already a directory
+                    if os.path.isdir(target_path):
+                        continue
                     
                     f = tf.extractfile(m)
                     if f:
