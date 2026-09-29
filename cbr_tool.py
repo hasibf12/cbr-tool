@@ -8,6 +8,9 @@ import shutil
 import uuid
 import platform
 import threading
+import tarfile
+import zipfile
+import glob
 
 # উইন্ডোজ পিসির কনসোলকে ফোর্সফুলি UTF-8 এবং ANSI কালার মোডে নেওয়া
 if sys.platform == "win32":
@@ -30,6 +33,7 @@ ADVANCE_PASSWORD_HASH = hashlib.sha256(bytes.fromhex("63627230313937363633343034
 
 # 🛡️ SUPER SECURE FIREBASE SECRET KEY 🛡️
 FIREBASE_SECRET = "W2u5TaOnnVWpdOwkCSsLDPuUzrXnSiC0o7ngf7zJ"
+SETTINGS_URL = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Settings.json?auth={FIREBASE_SECRET}"
 
 def send_activity_log(action_msg):
     try:
@@ -87,10 +91,12 @@ def get_device_info():
         if "product:" in result.stderr:
             product_name = result.stderr.split("product:")[1].split()[0]
             print(f"{GREEN}[✓] Connected Device: {product_name}{RESET}")
+            return product_name
         else:
             print(f"{ORANGE}[!] Could not read device product name.{RESET}")
+            return None
     except Exception:
-        pass
+        return None
 
 def authenticate():
     premium_header()
@@ -412,6 +418,142 @@ def advance_abdullah_hasib_tool():
         else:
             print(f"{RED}Invalid Option!{RESET}")
 
+# ==========================================
+# 🚀 NEW: CBR SMART FLASHER & EXTRACTOR 🚀
+# ==========================================
+def cbr_smart_flasher():
+    import requests
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(f"{PURPLE}=================================================={RESET}")
+    print(f"{HACKER_GREEN}{BOLD}    🚀 CBR SMART REDMI FLASHER (OTG SAFE) 🚀    {RESET}")
+    print(f"{PURPLE}=================================================={RESET}\n")
+    
+    print(f"{CYAN}[SECURITY]{RESET} Connecting to Cloud Authorization...")
+    try:
+        res = requests.get(SETTINGS_URL).json()
+        live_password = res.get('flash_password', 'Powerbycbr') if isinstance(res, dict) else 'Powerbycbr'
+    except:
+        live_password = "Powerbycbr" 
+        
+    auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter Flash Authorization Password: {RESET}").strip()
+    if auth_pass != live_password:
+        print(f"\n{RED}[✗] Access Denied: Incorrect Authorization Password!{RESET}")
+        send_activity_log("Failed Flash Attempt: Wrong Auth Password")
+        time.sleep(2)
+        return
+        
+    print(f"{GREEN}[✓] Access Granted! Loading CBR Flasher Engine...{RESET}")
+    send_activity_log("Opened CBR Smart Flasher Engine")
+    time.sleep(1)
+
+    rom_dir = "/sdcard/Download"
+    print(f"\n{CYAN}[SCANNING]{RESET} Searching for ROM files in {rom_dir}...")
+    
+    if not os.path.exists(rom_dir):
+        print(f"{RED}[!] Directory not found. Please run 'termux-setup-storage' first.{RESET}")
+        return
+        
+    rom_files = glob.glob(f"{rom_dir}/*.tgz") + glob.glob(f"{rom_dir}/*.zip") + glob.glob(f"{rom_dir}/*.tar.gz")
+    
+    if not rom_files:
+        print(f"{ORANGE}[!] No .tgz or .zip ROM files found in {rom_dir}.{RESET}")
+        return
+        
+    print(f"\n{GREEN}--- Found ROM Files ---{RESET}")
+    for i, file in enumerate(rom_files):
+        print(f" [{i+1}] {os.path.basename(file)}")
+        
+    try:
+        sel = int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number to Extract & Flash: {RESET}").strip())
+        selected_rom = rom_files[sel-1]
+    except (ValueError, IndexError):
+        print(f"{RED}[!] Invalid selection.{RESET}")
+        return
+
+    extract_folder = os.path.join(rom_dir, "CBR_Extracted_ROM")
+    print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
+    print(f"{DIM}Please wait, this may take a few minutes without glitches...{RESET}")
+    
+    try:
+        if os.path.exists(extract_folder):
+            shutil.rmtree(extract_folder)
+        os.makedirs(extract_folder)
+        
+        if selected_rom.endswith('.zip'):
+            with zipfile.ZipFile(selected_rom, 'r') as zip_ref:
+                zip_ref.extractall(extract_folder)
+        else:
+            with tarfile.open(selected_rom, 'r:*') as tar_ref:
+                tar_ref.extractall(extract_folder)
+        print(f"{GREEN}[✓] Extraction Complete!{RESET}")
+    except Exception as e:
+        print(f"{RED}[!] Extraction Failed: {e}{RESET}")
+        return
+
+    sh_file = None
+    for root, dirs, files in os.walk(extract_folder):
+        if "flash_all.sh" in files:
+            sh_file = os.path.join(root, "flash_all.sh")
+            break
+        elif "flash_all.bat" in files:
+            sh_file = os.path.join(root, "flash_all.bat")
+            break
+            
+    if not sh_file:
+        print(f"{RED}[!] Error: 'flash_all.sh' not found in extracted files! Invalid ROM.{RESET}")
+        return
+
+    script_dir = os.path.dirname(sh_file)
+    
+    print(f"\n{CYAN}[PRE-CHECK]{RESET} Verifying Device Connection...")
+    connected_device = get_device_info()
+    if not connected_device:
+        print(f"{RED}[!] Phone not found in fastboot or error reading device info.{RESET}")
+        return
+        
+    print(f"\n{CYAN}--- FLASHING OPTIONS ---{RESET}")
+    print(f"{GREEN} [1]{RESET} Flash All (Keep Bootloader Unlocked)")
+    print(f"{RED} [2]{RESET} Flash All & Lock (Lock Bootloader)")
+    lock_choice = input(f"\n{BOLD}{ORANGE}👉 Select Option: {RESET}").strip()
+
+    print(f"\n{HACKER_GREEN}[STARTING CBR FLASH ENGINE]{RESET}")
+    send_activity_log(f"Started Flashing ROM: {os.path.basename(selected_rom)}")
+    
+    with open(sh_file, 'r', encoding='utf-8', errors='ignore') as f:
+        lines = f.readlines()
+
+    for line in lines:
+        line = line.strip()
+        if line.startswith('fastboot'):
+            cmd = line.replace('`dirname $0`', script_dir).replace('%~dp0', script_dir + '/')
+            cmd = cmd.replace('$*', '').replace('%*', '').replace('\\', '/')
+            
+            success = False
+            for attempt in range(3):
+                print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
+                res = os.system(cmd)
+                if res == 0:
+                    success = True
+                    break
+                else:
+                    print(f"{RED}[!] Failed. OTG Retry ({attempt+1}/3)...{RESET}")
+                    time.sleep(2)
+                    
+            if not success:
+                print(f"{RED}[!] Skipping partition after 3 failures to prevent brick.{RESET}")
+                
+            time.sleep(2)
+            os.system("fastboot getvar product > /dev/null 2>&1") 
+
+    if lock_choice == '2':
+        print(f"\n{ORANGE}[LOCKING BOOTLOADER]{RESET}")
+        os.system("fastboot oem lock")
+        
+    print(f"\n{GREEN}[✓] FLASHING COMPLETED SUCCESSFULLY!{RESET}")
+    print(f"{CYAN}[*] Rebooting Phone...{RESET}")
+    os.system("fastboot reboot")
+    send_activity_log("Successfully Completed ROM Flashing")
+
 def admin_panel():
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{PURPLE}=================================================={RESET}")
@@ -429,35 +571,62 @@ def admin_panel():
     
     while True:
         os.system('cls' if os.name == 'nt' else 'clear')
-        print(f"{CYAN}--- REGISTERED USERS ---{RESET}\n")
+        print(f"{CYAN}--- ADMIN PANEL ---{RESET}")
+        print(f"{GREEN} [1]{RESET} Manage Users (Logs/Ban/Clear)")
+        print(f"{ORANGE} [5]{RESET} 🔑 Change Redmi Flash Password (Cloud)")
+        print(f"{RED} [0]{RESET} Back to Main Menu")
         
-        try:
-            users_data = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}").json()
-            if not users_data or "error" in users_data:
-                print(f"{RED}No users found or Access Denied.{RESET}")
-                input("\nPress Enter to go back...")
-                break
-                
-            email_list = []
-            for hwid, data in users_data.items():
-                if isinstance(data, dict):
-                    email = data.get('email', 'Unknown')
-                    device = data.get('device_name', 'Unknown Device')
-                    status = data.get('status', 'Pending')
-                    
-                    if status == 'Approved': status_text = f"{GREEN}{status}{RESET}"
-                    elif status == 'Banned': status_text = f"{RED}{status}{RESET}"
-                    else: status_text = f"{ORANGE}{status}{RESET}"
-                    
-                    print(f"{CYAN}[{len(email_list)+1}]{RESET} {email} | {DIM}{device}{RESET} | [{status_text}]")
-                    email_list.append((hwid, email))
-                
-            print(f"\n{RED}[0]{RESET} Back to Main Menu")
+        admin_opt = input(f"\n{BOLD}{ORANGE}👉 Select Action: {RESET}").strip()
+        
+        if admin_opt == '0':
+            break
             
+        elif admin_opt == '5':
+            print(f"\n{CYAN}--- UPDATE FLASH PASSWORD ---{RESET}")
             try:
+                curr_req = requests.get(SETTINGS_URL).json()
+                current_pass = curr_req.get('flash_password', 'Powerbycbr') if isinstance(curr_req, dict) else 'Powerbycbr'
+                print(f"{DIM}Current Cloud Password: {current_pass}{RESET}")
+            except:
+                pass
+                
+            new_pass = input(f"{BOLD}{ORANGE}👉 Enter New Password (or press enter to cancel): {RESET}").strip()
+            if new_pass:
+                try:
+                    requests.patch(SETTINGS_URL, json={"flash_password": new_pass})
+                    print(f"{GREEN}[✓] Flash Password Successfully Updated to Cloud!{RESET}")
+                except Exception as e:
+                    print(f"{RED}[!] Error saving password: {e}{RESET}")
+            input(f"\n{PURPLE}Press Enter to continue...{RESET}")
+            
+        elif admin_opt == '1':
+            try:
+                users_data = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}").json()
+                if not users_data or "error" in users_data:
+                    print(f"{RED}No users found or Access Denied.{RESET}")
+                    input("\nPress Enter to go back...")
+                    continue
+                    
+                email_list = []
+                print(f"\n{CYAN}--- REGISTERED USERS ---{RESET}")
+                for hwid, data in users_data.items():
+                    if isinstance(data, dict):
+                        email = data.get('email', 'Unknown')
+                        device = data.get('device_name', 'Unknown Device')
+                        status = data.get('status', 'Pending')
+                        
+                        if status == 'Approved': status_text = f"{GREEN}{status}{RESET}"
+                        elif status == 'Banned': status_text = f"{RED}{status}{RESET}"
+                        else: status_text = f"{ORANGE}{status}{RESET}"
+                        
+                        print(f"{CYAN}[{len(email_list)+1}]{RESET} {email} | {DIM}{device}{RESET} | [{status_text}]")
+                        email_list.append((hwid, email))
+                    
+                print(f"\n{RED}[0]{RESET} Back to Admin Menu")
+                
                 choice = int(input(f"\n{BOLD}{ORANGE}👉 Select a User Number: {RESET}").strip())
                 if choice == 0:
-                    break
+                    continue
                 if choice < 1 or choice > len(email_list):
                     print(f"{RED}Invalid selection!{RESET}"); time.sleep(1); continue
                     
@@ -503,11 +672,9 @@ def admin_panel():
             except ValueError:
                 print(f"{RED}Please enter a valid number!{RESET}")
                 time.sleep(1)
-                
-        except Exception as e:
-            print(f"{RED}Error connecting to database: {e}{RESET}")
-            input("\nPress Enter to go back...")
-            break
+            except Exception as e:
+                print(f"{RED}Error connecting to database: {e}{RESET}")
+                input("\nPress Enter to go back...")
 
 def main_menu():
     while True:
@@ -515,6 +682,7 @@ def main_menu():
         print(f"{CYAN} [1]{RESET} Bootloader Unlock")
         print(f"{CYAN} [2]{RESET} CBR WIFI (Setup)") 
         print(f"{CYAN} [3]{RESET} ⚡ ADVANCE ONLY CBR OWNER ABDULLAH AL HASIB ⚡") 
+        print(f"{GREEN} [5]{RESET} 📱 Redmi ROM Flash (CBR Native Engine)") 
         print(f"{RED} [9]{RESET} {BOLD}Admin Control Panel{RESET}")
         print(f"{CYAN} [4]{RESET} Exit")
         
@@ -529,6 +697,9 @@ def main_menu():
             sys.exit(0)
         elif choice == '3':
             advance_abdullah_hasib_tool()
+        elif choice == '5':
+            cbr_smart_flasher()
+            input(f"\n{PURPLE}Press Enter to return to menu...{RESET}")
         elif choice == '9':
             admin_panel()
         elif choice == '4':
