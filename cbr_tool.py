@@ -437,6 +437,9 @@ def advance_abdullah_hasib_tool():
 # ==========================================
 def cbr_smart_flasher():
     import requests
+    # 🛡️ Anti-Disconnect: Wake-Lock Shield 🛡️
+    os.system("termux-wake-lock > /dev/null 2>&1")
+    
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{PURPLE}=================================================={RESET}")
     print(f"{HACKER_GREEN}{BOLD}    🚀 CBR SMART REDMI FLASHER (OTG SAFE) 🚀    {RESET}")
@@ -454,93 +457,97 @@ def cbr_smart_flasher():
         print(f"\n{RED}[✗] Access Denied: Incorrect Authorization Password!{RESET}")
         send_activity_log("Failed Flash Attempt: Wrong Auth Password")
         time.sleep(2)
+        os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     print(f"{GREEN}[✓] Access Granted! Loading CBR Flasher Engine...{RESET}")
     print(f"{CYAN}[SYSTEM]{RESET} Verifying MiTool Core Drivers (OTG/API)... {GREEN}OK!{RESET}")
+    print(f"{CYAN}[SHIELD]{RESET} Termux Wake-Lock Enabled. Device won't sleep! {GREEN}OK!{RESET}")
     send_activity_log("Opened CBR Smart Flasher Engine")
     time.sleep(1)
 
     rom_dir = "/sdcard/Download"
-    print(f"\n{CYAN}[SCANNING]{RESET} Searching for ROM files in {rom_dir}...")
+    print(f"\n{CYAN}[SCANNING]{RESET} Searching for ROM Zips & Unzipped Folders in {rom_dir}...")
     
     if not os.path.exists(rom_dir):
         print(f"{RED}[!] Directory not found. Please run 'termux-setup-storage' first.{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
-    rom_files = glob.glob(f"{rom_dir}/*.tgz") + glob.glob(f"{rom_dir}/*.zip") + glob.glob(f"{rom_dir}/*.tar.gz")
+    # --- SMART FOLDER SCANNER ---
+    rom_archives = glob.glob(f"{rom_dir}/*.tgz") + glob.glob(f"{rom_dir}/*.zip") + glob.glob(f"{rom_dir}/*.tar.gz")
+    rom_folders = []
     
-    if not rom_files:
-        print(f"{ORANGE}[!] No .tgz or .zip ROM files found in {rom_dir}.{RESET}")
+    try:
+        for item in os.listdir(rom_dir):
+            item_path = os.path.join(rom_dir, item)
+            if os.path.isdir(item_path):
+                if os.path.exists(os.path.join(item_path, "flash_all.sh")) or os.path.exists(os.path.join(item_path, "flash_all.bat")):
+                    rom_folders.append(item_path)
+                else:
+                    # Check 1 level deep inside folder
+                    for sub in os.listdir(item_path):
+                        sub_path = os.path.join(item_path, sub)
+                        if os.path.isdir(sub_path):
+                            if os.path.exists(os.path.join(sub_path, "flash_all.sh")) or os.path.exists(os.path.join(sub_path, "flash_all.bat")):
+                                rom_folders.append(sub_path)
+    except:
+        pass
+        
+    all_roms = list(set(rom_folders)) + rom_archives
+    
+    if not all_roms:
+        print(f"{ORANGE}[!] No valid ROMs (Zips or Unzipped Folders) found in {rom_dir}.{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     print(f"\n{GREEN}--- Found ROM Files ---{RESET}")
-    for i, file in enumerate(rom_files):
-        print(f" [{i+1}] {os.path.basename(file)}")
+    for i, file in enumerate(all_roms):
+        if os.path.isdir(file):
+            print(f" [{i+1}] {BOLD}{CYAN}[DIR]{RESET} {os.path.basename(file)}")
+        else:
+            print(f" [{i+1}] {BOLD}{ORANGE}[ZIP]{RESET} {os.path.basename(file)}")
         
     try:
-        sel = int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number to Extract & Flash: {RESET}").strip())
-        selected_rom = rom_files[sel-1]
+        sel = int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number to Extract/Flash: {RESET}").strip())
+        selected_rom = all_roms[sel-1]
     except (ValueError, IndexError):
         print(f"{RED}[!] Invalid selection.{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
-    extract_folder = os.path.join(rom_dir, "CBR_Extracted_ROM")
-    print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
-    print(f"{DIM}Please wait, calculating total size...{RESET}\n")
-    
-    try:
-        if os.path.exists(extract_folder):
-            shutil.rmtree(extract_folder)
-        os.makedirs(extract_folder)
+    # Check if pre-unzipped
+    if os.path.isdir(selected_rom):
+        print(f"\n{CYAN}[SMART DETECT]{RESET} Pre-unzipped folder detected! Skipping extraction... 🚀")
+        extract_folder = selected_rom
+    else:
+        extract_folder = os.path.join(rom_dir, "CBR_Extracted_ROM")
+        print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
+        print(f"{DIM}Please wait, calculating total size...{RESET}\n")
         
-        if selected_rom.endswith('.zip'):
-            with zipfile.ZipFile(selected_rom, 'r') as zf:
-                infos = zf.infolist()
-                total_size = sum(info.file_size for info in infos)
-                extracted_size = 0
-                for info in infos:
-                    target_path = os.path.join(extract_folder, info.filename)
-                    if info.is_dir() or info.filename.endswith('/'):
-                        os.makedirs(target_path, exist_ok=True)
-                        continue
-                    
-                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                    if os.path.isdir(target_path):
-                        continue
-                    
-                    with zf.open(info) as source, open(target_path, 'wb') as target:
-                        while True:
-                            chunk = source.read(1024 * 1024) 
-                            if not chunk:
-                                break
-                            target.write(chunk)
-                            extracted_size += len(chunk)
-                            percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
-                            mb_ex = extracted_size / (1024 * 1024)
-                            mb_tot = total_size / (1024 * 1024)
-                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
-                            sys.stdout.flush()
-        else:
-            with tarfile.open(selected_rom, 'r:*') as tf:
-                members = tf.getmembers()
-                total_size = sum(m.size for m in members)
-                extracted_size = 0
-                for m in members:
-                    target_path = os.path.join(extract_folder, m.name)
-                    if m.isdir() or m.name.endswith('/'):
-                        os.makedirs(target_path, exist_ok=True)
-                        continue
+        try:
+            if os.path.exists(extract_folder):
+                shutil.rmtree(extract_folder)
+            os.makedirs(extract_folder)
+            
+            if selected_rom.endswith('.zip'):
+                with zipfile.ZipFile(selected_rom, 'r') as zf:
+                    infos = zf.infolist()
+                    total_size = sum(info.file_size for info in infos)
+                    extracted_size = 0
+                    for info in infos:
+                        target_path = os.path.join(extract_folder, info.filename)
+                        if info.is_dir() or info.filename.endswith('/'):
+                            os.makedirs(target_path, exist_ok=True)
+                            continue
                         
-                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                    if os.path.isdir(target_path):
-                        continue
-                    
-                    f = tf.extractfile(m)
-                    if f:
-                        with open(target_path, 'wb') as target:
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        if os.path.isdir(target_path):
+                            continue
+                        
+                        with zf.open(info) as source, open(target_path, 'wb') as target:
                             while True:
-                                chunk = f.read(1024 * 1024) 
+                                chunk = source.read(1024 * 1024) 
                                 if not chunk:
                                     break
                                 target.write(chunk)
@@ -550,11 +557,41 @@ def cbr_smart_flasher():
                                 mb_tot = total_size / (1024 * 1024)
                                 sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
                                 sys.stdout.flush()
-                    
-        print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
-    except Exception as e:
-        print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
-        return
+            else:
+                with tarfile.open(selected_rom, 'r:*') as tf:
+                    members = tf.getmembers()
+                    total_size = sum(m.size for m in members)
+                    extracted_size = 0
+                    for m in members:
+                        target_path = os.path.join(extract_folder, m.name)
+                        if m.isdir() or m.name.endswith('/'):
+                            os.makedirs(target_path, exist_ok=True)
+                            continue
+                            
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        if os.path.isdir(target_path):
+                            continue
+                        
+                        f = tf.extractfile(m)
+                        if f:
+                            with open(target_path, 'wb') as target:
+                                while True:
+                                    chunk = f.read(1024 * 1024) 
+                                    if not chunk:
+                                        break
+                                    target.write(chunk)
+                                    extracted_size += len(chunk)
+                                    percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
+                                    mb_ex = extracted_size / (1024 * 1024)
+                                    mb_tot = total_size / (1024 * 1024)
+                                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
+                                    sys.stdout.flush()
+                        
+            print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
+        except Exception as e:
+            print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
+            os.system("termux-wake-unlock > /dev/null 2>&1")
+            return
 
     sh_file = None
     for root, dirs, files in os.walk(extract_folder):
@@ -567,6 +604,7 @@ def cbr_smart_flasher():
             
     if not sh_file:
         print(f"{RED}[!] Error: 'flash_all.sh' not found in extracted files! Invalid ROM.{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
     script_dir = os.path.dirname(sh_file)
@@ -575,6 +613,7 @@ def cbr_smart_flasher():
     connected_device = get_device_info()
     if not connected_device:
         print(f"{RED}[!] Phone not found in fastboot or error reading device info.{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     print(f"\n{CYAN}--- FLASHING OPTIONS ---{RESET}")
@@ -588,10 +627,15 @@ def cbr_smart_flasher():
     with open(sh_file, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.readlines()
 
-    # --- THE ULTIMATE ANTI-HANG LIVE STREAMING ENGINE ---
+    # --- FORCE FLASH BYPASS & DIAGNOSTIC ENGINE ---
     for line in lines:
         line = line.strip()
         if line.startswith('fastboot'):
+            # Force Bypass Xiaomi Anti-Rollback & Product Checks
+            if 'getvar product' in line or 'getvar anti' in line or 'anti_version' in line or 'product:' in line:
+                print(f"{ORANGE}[BYPASS]{RESET} {DIM}Skipping manufacturer restriction: {line}{RESET}")
+                continue
+                
             cmd = line.replace('`dirname $0`', script_dir).replace('%~dp0', script_dir + '/')
             cmd = cmd.replace('$*', '').replace('%*', '').replace('\\', '/')
             
@@ -599,12 +643,22 @@ def cbr_smart_flasher():
             for attempt in range(3):
                 print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
                 
-                # লাইভ আউটপুট স্ট্রিমিং (Mi Flash Tool এর মতো)
-                # এই ইঞ্জিন টার্মাক্সকে কখনোই ঘুমাতে দেবে না!
                 process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
                 
                 for out_line in process.stdout:
-                    # লাইভ আউটপুট স্ক্রিনে প্রিন্ট হবে
+                    line_lower = out_line.lower()
+                    
+                    # CBR Auto-Diagnostic
+                    if "error" in line_lower or "failed" in line_lower:
+                        if "locked" in line_lower or "not allowed" in line_lower:
+                            print(f"{RED}   [DIAGNOSTIC] Bootloader is Locked! Please unlock first.{RESET}")
+                        elif "anti-rollback" in line_lower or "anti rollback" in line_lower:
+                            print(f"{RED}   [DIAGNOSTIC] Anti-Rollback triggered! You are downgrading.{RESET}")
+                        elif "not found" in line_lower and "partition" in line_lower:
+                            print(f"{ORANGE}   [DIAGNOSTIC] Partition missing on device. Skipping safely.{RESET}")
+                        elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower:
+                            print(f"{RED}   [DIAGNOSTIC] USB Connection Dropped! Check OTG/Cable.{RESET}")
+                            
                     print(f"{DIM}   >> {out_line.strip()}{RESET}")
                 
                 process.wait()
@@ -619,8 +673,7 @@ def cbr_smart_flasher():
             if not success:
                 print(f"{RED}[!] Skipping partition after 3 failures to prevent brick.{RESET}")
                 
-            time.sleep(2) # Safe Breathing Delay
-            # ডামি কমান্ড দিয়ে কানেকশন জিন্দা রাখা
+            time.sleep(2) 
             subprocess.run("fastboot getvar product > /dev/null 2>&1", shell=True) 
 
     if lock_choice == '2':
@@ -631,6 +684,9 @@ def cbr_smart_flasher():
     print(f"{CYAN}[*] Rebooting Phone...{RESET}")
     subprocess.run("fastboot reboot", shell=True)
     send_activity_log("Successfully Completed ROM Flashing")
+    
+    # Disable Wake-Lock after finish
+    os.system("termux-wake-unlock > /dev/null 2>&1")
 
 def admin_panel():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -805,6 +861,7 @@ def run_tool():
         
     except Exception as fatal_err:
         print(f"\n{RED}[CRITICAL ERROR]: {str(fatal_err)}{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
         input("\nPress Enter to debug/exit...")
 
 if __name__ == "__main__":
