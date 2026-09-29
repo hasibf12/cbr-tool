@@ -71,6 +71,20 @@ def check_dependencies():
         print(f"{ORANGE}[!] Libraries missing. Installing packages silently...{RESET}")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "colorama", "pycryptodomex", "miunlock", "requests", "--quiet"])
 
+# 🚀 NEW: OTG DRIVERS & TERMUX API SETUP (Like MiTool) 🚀
+def setup_otg_drivers():
+    if platform.system().lower() != "windows":
+        try:
+            if not os.path.exists("/data/data/com.termux/files/usr/bin/termux-usb"):
+                print(f"{ORANGE}[*] Installing Advanced OTG Drivers (libusb, termux-api)...{RESET}")
+                os.system("pkg install termux-api libusb -y > /dev/null 2>&1")
+            
+            if not os.path.exists("/data/data/com.termux/files/usr/bin/termux-fastboot"):
+                print(f"{ORANGE}[*] Installing Termux-ADB Engine (nohajc repo)...{RESET}")
+                os.system("curl -fsS https://raw.githubusercontent.com/nohajc/termux-adb/master/install.sh | bash > /dev/null 2>&1")
+        except:
+            pass
+
 def check_fastboot():
     if shutil.which("fastboot") is None:
         print(f"{RED}[!] Fastboot is not installed or not in PATH!{RESET}")
@@ -474,7 +488,7 @@ def cbr_smart_flasher():
     print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
     print(f"{DIM}Please wait, calculating total size...{RESET}\n")
     
-    # --- SMOOTH CHUNK-BASED LIVE PROGRESS BAR ---
+    # --- TRUE STATIC LINE (DIRECTORY ERROR FIXED) ---
     try:
         if os.path.exists(extract_folder):
             shutil.rmtree(extract_folder)
@@ -486,8 +500,16 @@ def cbr_smart_flasher():
                 total_size = sum(info.file_size for info in infos)
                 extracted_size = 0
                 for info in infos:
-                    # Extract file by reading chunks for smooth live update
-                    with zf.open(info) as source, open(os.path.join(extract_folder, info.filename), 'wb') as target:
+                    target_path = os.path.join(extract_folder, info.filename)
+                    # FIX: Handle directory paths in ZIP properly
+                    if info.is_dir() or info.filename.endswith('/'):
+                        os.makedirs(target_path, exist_ok=True)
+                        continue
+                    
+                    # Ensure parent directories exist before extracting file
+                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                    
+                    with zf.open(info) as source, open(target_path, 'wb') as target:
                         while True:
                             chunk = source.read(1024 * 1024) # 1MB chunk
                             if not chunk:
@@ -505,14 +527,18 @@ def cbr_smart_flasher():
                 total_size = sum(m.size for m in members)
                 extracted_size = 0
                 for m in members:
-                    # Handle directories
+                    target_path = os.path.join(extract_folder, m.name)
+                    # FIX: Handle directory paths in TAR properly
                     if m.isdir():
-                        os.makedirs(os.path.join(extract_folder, m.name), exist_ok=True)
+                        os.makedirs(target_path, exist_ok=True)
                         continue
-                    # Extract file by reading chunks for smooth live update
+                        
+                    # Ensure parent directories exist before extracting file
+                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                    
                     f = tf.extractfile(m)
                     if f:
-                        with open(os.path.join(extract_folder, m.name), 'wb') as target:
+                        with open(target_path, 'wb') as target:
                             while True:
                                 chunk = f.read(1024 * 1024) # 1MB chunk
                                 if not chunk:
@@ -754,6 +780,7 @@ def main_menu():
 def run_tool():
     try:
         check_dependencies()
+        setup_otg_drivers()
         if not authenticate():
             input(f"\n{RED}Press Enter to exit...{RESET}")
             sys.exit(1)
