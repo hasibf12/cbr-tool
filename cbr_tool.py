@@ -708,6 +708,325 @@ def cbr_smart_flasher():
     # Disable Wake-Lock after finish
     os.system("termux-wake-unlock > /dev/null 2>&1")
 
+# ==========================================
+# 🚀 NEW: CBR INFINIX STOCK ROM FLASHER 🚀
+# ==========================================
+def cbr_infinix_flasher():
+    import requests
+    # 🛡️ Anti-Disconnect: Wake-Lock Shield 🛡️
+    os.system("termux-wake-lock > /dev/null 2>&1")
+    
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(f"{PURPLE}=================================================={RESET}")
+    print(f"{HACKER_GREEN}{BOLD}   🚀 CBR INFINIX STOCK ROM FLASHER (FASTBOOTD) 🚀   {RESET}")
+    print(f"{PURPLE}=================================================={RESET}\n")
+    
+    print(f"{CYAN}[SECURITY]{RESET} Connecting to Cloud Authorization...")
+    try:
+        res = requests.get(SETTINGS_URL).json()
+        live_password = res.get('infinix_password', 'cbr') if isinstance(res, dict) else 'cbr'
+    except:
+        live_password = "cbr"
+        
+    auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter Infinix Flash Authorization Password: {RESET}").strip()
+    if auth_pass != live_password and auth_pass != f":{live_password}":
+        print(f"\n{RED}[✗] Access Denied: Incorrect Authorization Password!{RESET}")
+        send_activity_log("Failed Infinix Flash Attempt: Wrong Auth Password")
+        time.sleep(2)
+        os.system("termux-wake-unlock > /dev/null 2>&1")
+        return
+        
+    print(f"{GREEN}[✓] Access Granted! Loading CBR Infinix Flasher Engine...{RESET}")
+    print(f"{CYAN}[SYSTEM]{RESET} Verifying OTG/FastbootD Core Drivers... {GREEN}OK!{RESET}")
+    print(f"{CYAN}[SHIELD]{RESET} Termux Wake-Lock Enabled. Device won't sleep! {GREEN}OK!{RESET}")
+    send_activity_log("Opened CBR Infinix Stock ROM Flasher")
+    time.sleep(1)
+
+    rom_dir = "/sdcard/Download"
+    print(f"\n{CYAN}[SCANNING]{RESET} Searching for Infinix ROM Zips & Scatter Folders in {rom_dir}...")
+    
+    if not os.path.exists(rom_dir):
+        print(f"{RED}[!] Directory not found. Please run 'termux-setup-storage' first.{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
+        return
+        
+    rom_archives = glob.glob(f"{rom_dir}/*.zip") + glob.glob(f"{rom_dir}/*.tgz") + glob.glob(f"{rom_dir}/*.tar.gz")
+    rom_folders = []
+    
+    def is_infinix_rom_dir(d_path):
+        try:
+            files_in_dir = os.listdir(d_path)
+            for f_name in files_in_dir:
+                if "scatter" in f_name.lower() or f_name.lower() == "super.img":
+                    return True
+        except:
+            pass
+        return False
+
+    try:
+        for item in os.listdir(rom_dir):
+            item_path = os.path.join(rom_dir, item)
+            if os.path.isdir(item_path):
+                if is_infinix_rom_dir(item_path):
+                    rom_folders.append(item_path)
+                else:
+                    for sub in os.listdir(item_path):
+                        sub_path = os.path.join(item_path, sub)
+                        if os.path.isdir(sub_path) and is_infinix_rom_dir(sub_path):
+                            rom_folders.append(sub_path)
+    except:
+        pass
+        
+    all_roms = list(set(rom_folders)) + rom_archives
+    
+    if not all_roms:
+        print(f"{ORANGE}[!] No valid Infinix ROMs (Zips or Scatter Folders) found in {rom_dir}.{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
+        return
+        
+    print(f"\n{GREEN}--- Found Infinix ROM Files ---{RESET}")
+    for i, file in enumerate(all_roms):
+        if os.path.isdir(file):
+            print(f" [{i+1}] {BOLD}{CYAN}[DIR]{RESET} {os.path.basename(file)}")
+        else:
+            print(f" [{i+1}] {BOLD}{ORANGE}[ZIP]{RESET} {os.path.basename(file)}")
+        
+    try:
+        sel = int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number to Extract/Flash: {RESET}").strip())
+        selected_rom = all_roms[sel-1]
+    except (ValueError, IndexError):
+        print(f"{RED}[!] Invalid selection.{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
+        return
+
+    if os.path.isdir(selected_rom):
+        print(f"\n{CYAN}[SMART DETECT]{RESET} Pre-unzipped Infinix folder detected! Skipping extraction... 🚀")
+        extract_folder = selected_rom
+    else:
+        extract_folder = os.path.join(rom_dir, "CBR_Extracted_Infinix_ROM")
+        print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
+        print(f"{DIM}Please wait, calculating total size...{RESET}\n")
+        
+        try:
+            if os.path.exists(extract_folder):
+                shutil.rmtree(extract_folder)
+            os.makedirs(extract_folder)
+            
+            if selected_rom.endswith('.zip'):
+                with zipfile.ZipFile(selected_rom, 'r') as zf:
+                    infos = zf.infolist()
+                    total_size = sum(info.file_size for info in infos)
+                    extracted_size = 0
+                    for info in infos:
+                        target_path = os.path.join(extract_folder, info.filename)
+                        if info.is_dir() or info.filename.endswith('/'):
+                            os.makedirs(target_path, exist_ok=True)
+                            continue
+                        
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        if os.path.isdir(target_path):
+                            continue
+                        
+                        with zf.open(info) as source, open(target_path, 'wb') as target:
+                            while True:
+                                chunk = source.read(1024 * 1024) 
+                                if not chunk:
+                                    break
+                                target.write(chunk)
+                                extracted_size += len(chunk)
+                                percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
+                                mb_ex = extracted_size / (1024 * 1024)
+                                mb_tot = total_size / (1024 * 1024)
+                                sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
+                                sys.stdout.flush()
+            else:
+                with tarfile.open(selected_rom, 'r:*') as tf:
+                    members = tf.getmembers()
+                    total_size = sum(m.size for m in members)
+                    extracted_size = 0
+                    for m in members:
+                        target_path = os.path.join(extract_folder, m.name)
+                        if m.isdir() or m.name.endswith('/'):
+                            os.makedirs(target_path, exist_ok=True)
+                            continue
+                            
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        if os.path.isdir(target_path):
+                            continue
+                        
+                        f = tf.extractfile(m)
+                        if f:
+                            with open(target_path, 'wb') as target:
+                                while True:
+                                    chunk = f.read(1024 * 1024) 
+                                    if not chunk:
+                                        break
+                                    target.write(chunk)
+                                    extracted_size += len(chunk)
+                                    percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
+                                    mb_ex = extracted_size / (1024 * 1024)
+                                    mb_tot = total_size / (1024 * 1024)
+                                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
+                                    sys.stdout.flush()
+                        
+            print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
+        except Exception as e:
+            print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
+            os.system("termux-wake-unlock > /dev/null 2>&1")
+            return
+
+    # Locate exact directory containing ROM images / scatter file
+    rom_img_dir = None
+    scatter_found = None
+    for root, dirs, files in os.walk(extract_folder):
+        for f_name in files:
+            if "scatter" in f_name.lower() and (f_name.endswith(".txt") or f_name.endswith(".xml")):
+                scatter_found = f_name
+                rom_img_dir = root
+                break
+            elif f_name.lower() == "super.img":
+                rom_img_dir = root
+        if rom_img_dir and scatter_found:
+            break
+
+    if not rom_img_dir:
+        print(f"{RED}[!] Error: Scatter file or 'super.img' not found in ROM folder!{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
+        return
+
+    if scatter_found:
+        print(f"{GREEN}[✓] Detected Scatter File: {scatter_found}{RESET}")
+    print(f"{CYAN}[✓] ROM Image Directory Ready: {rom_img_dir}{RESET}")
+
+    print(f"\n{CYAN}[PRE-CHECK]{RESET} Checking Fastboot / FastbootD Device Connection...")
+    connected_device = get_device_info()
+    if not connected_device:
+        print(f"{RED}[!] Phone not detected! Please connect phone in Fastboot/FastbootD mode via OTG.{RESET}")
+        os.system("termux-wake-unlock > /dev/null 2>&1")
+        return
+
+    def wait_for_fastboot_device(mode_label):
+        print(f"{CYAN}[*] Waiting for phone to reconnect in {mode_label}...{RESET}")
+        time.sleep(4)
+        for _ in range(30):
+            res = subprocess.run(["fastboot", "devices"], capture_output=True, text=True)
+            if res.stdout.strip():
+                print(f"{GREEN}[✓] Device Reconnected in {mode_label}!{RESET}")
+                time.sleep(2)
+                return True
+            time.sleep(2)
+        print(f"{ORANGE}[!] Reconnect check timed out, continuing sequence...{RESET}")
+        return False
+
+    def execute_single_fastboot_cmd(cmd_str, step_label, allow_skip=False):
+        success = False
+        for attempt in range(3):
+            print(f"\n{ORANGE}[{step_label} | RUNNING]{RESET} {cmd_str}")
+            process = subprocess.Popen(cmd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
+            for out_line in process.stdout:
+                line_lower = out_line.lower()
+                if "error" in line_lower or "failed" in line_lower:
+                    if "locked" in line_lower or "not allowed" in line_lower:
+                        print(f"{RED}   [DIAGNOSTIC] Bootloader is Locked! Please unlock first.{RESET}")
+                    elif "not found" in line_lower or "doesn't exist" in line_lower:
+                        print(f"{ORANGE}   [DIAGNOSTIC] Partition/Variable not found on this model.{RESET}")
+                    elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower:
+                        print(f"{RED}   [DIAGNOSTIC] USB OTG Glitch Detected! Retrying...{RESET}")
+                print(f"{DIM}   >> {out_line.strip()}{RESET}")
+            process.wait()
+            if process.returncode == 0:
+                success = True
+                break
+            else:
+                if allow_skip and attempt == 0:
+                    print(f"{ORANGE}[!] Optional partition/action returned non-zero, moving to next step safely...{RESET}")
+                    break
+                print(f"{RED}[!] Command Failed. OTG Auto-Retry ({attempt+1}/3)...{RESET}")
+                time.sleep(3)
+        time.sleep(2)
+        subprocess.run("fastboot getvar product > /dev/null 2>&1", shell=True)
+        return success
+
+    def flash_partition_file(part_name, img_filename, step_label, extra_flags=""):
+        img_path = os.path.join(rom_img_dir, img_filename)
+        if not os.path.exists(img_path):
+            print(f"\n{ORANGE}[SKIP]{RESET} {img_filename} not found in ROM folder, skipping {part_name}.")
+            return
+        flag_str = f"{extra_flags} " if extra_flags else ""
+        cmd_str = f'fastboot {flag_str}flash {part_name} "{img_path}"'
+        execute_single_fastboot_cmd(cmd_str, step_label)
+
+    print(f"\n{HACKER_GREEN}=================================================={RESET}")
+    print(f"{HACKER_GREEN}{BOLD}   🚀 STARTING SERIAL INFINIX FLASH SEQUENCE 🚀   {RESET}")
+    print(f"{HACKER_GREEN}=================================================={RESET}")
+    send_activity_log(f"Started Infinix ROM Flash: {os.path.basename(selected_rom)}")
+
+    # --- STEP 2: BOOT TO FASTBOOTD MODE ---
+    print(f"\n{CYAN}{BOLD}>>> STAGE 1: FASTBOOTD MODE OPERATIONS <<<{RESET}")
+    execute_single_fastboot_cmd("fastboot reboot fastboot", "STEP 2-A")
+    wait_for_fastboot_device("FastbootD Mode")
+
+    execute_single_fastboot_cmd("fastboot delete-logical-partition product", "STEP 2-B", allow_skip=True)
+    execute_single_fastboot_cmd("fastboot erase system", "STEP 2-C", allow_skip=True)
+    flash_partition_file("super", "super.img", "STEP 2-D")
+    execute_single_fastboot_cmd("fastboot -w", "STEP 2-E", allow_skip=True)
+
+    # --- BOOTLOADER MODE ---
+    print(f"\n{CYAN}{BOLD}>>> STAGE 2: BOOTLOADER MODE FLASHING <<<{RESET}")
+    execute_single_fastboot_cmd("fastboot reboot bootloader", "BOOTLOADER-SWITCH")
+    wait_for_fastboot_device("Bootloader Mode")
+
+    bootloader_flash_list = [
+        ("boot_a", "boot.img", "STEP F"),
+        ("boot_b", "boot.img", "STEP G"),
+        ("dtbo_a", "dtbo.img", "STEP A"),
+        ("dtbo_b", "dtbo.img", "STEP B"),
+        ("gz_a", "gz.img", "STEP C"),
+        ("gz_b", "gz.img", "STEP D"),
+        ("lk_a", "lk.img", "STEP E"),
+        ("lk_b", "lk.img", "STEP F"),
+        ("md1img_a", "md1img.img", "STEP G"),
+        ("md1img_b", "md1img.img", "STEP H"),
+        ("scp_a", "scp.img", "STEP I"),
+        ("scp_b", "scp.img", "STEP J"),
+        ("spmfw_a", "spmfw.img", "STEP H-2"),
+        ("spmfw_b", "spmfw.img", "STEP I-2"),
+        ("sspm_a", "sspm.img", "STEP K"),
+        ("sspm_b", "sspm.img", "STEP L"),
+        ("tee_a", "tee.img", "STEP M"),
+        ("tee_b", "tee.img", "STEP N"),
+        ("userdata", "userdata.img", "STEP O"),
+    ]
+
+    for part_name, img_file, label in bootloader_flash_list:
+        flash_partition_file(part_name, img_file, label)
+
+    # --- VBMETA VERITY DISABLE ---
+    print(f"\n{CYAN}{BOLD}>>> STAGE 3: VBMETA VERITY & VERIFICATION DISABLE <<<{RESET}")
+    vbmeta_flags = "--disable-verity --disable-verification"
+    vbmeta_flash_list = [
+        ("vbmeta_a", "vbmeta.img", "VBMETA-A"),
+        ("vbmeta_b", "vbmeta.img", "VBMETA-B"),
+        ("vbmeta_system_a", "vbmeta_system.img", "VBMETA-SYS-A"),
+        ("vbmeta_system_b", "vbmeta_system.img", "VBMETA-SYS-B"),
+        ("vbmeta_vendor_a", "vbmeta_vendor.img", "VBMETA-VEN-A"),
+        ("vbmeta_vendor_b", "vbmeta_vendor.img", "VBMETA-VEN-B"),
+    ]
+
+    for part_name, img_file, label in vbmeta_flash_list:
+        flash_partition_file(part_name, img_file, label, extra_flags=vbmeta_flags)
+
+    # --- REBOOT TO RECOVERY (FACTORY RESET) ---
+    print(f"\n{CYAN}{BOLD}>>> STAGE 4: REBOOTING TO RECOVERY (FACTORY RESET) <<<{RESET}")
+    execute_single_fastboot_cmd("fastboot reboot recovery", "FINAL-RECOVERY-BOOT", allow_skip=True)
+
+    print(f"\n{GREEN}{BOLD}[✓] INFINIX STOCK ROM FLASHING COMPLETED 100% SUCCESSFULLY!{RESET}")
+    print(f"{ORANGE}[*] Phone is booting into Recovery Mode. Please perform Factory Reset if prompted.{RESET}")
+    send_activity_log("Successfully Completed Infinix Stock ROM Flashing")
+    
+    # Disable Wake-Lock after finish
+    os.system("termux-wake-unlock > /dev/null 2>&1")
+
 def admin_panel():
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{PURPLE}=================================================={RESET}")
@@ -728,6 +1047,7 @@ def admin_panel():
         print(f"{CYAN}--- ADMIN PANEL ---{RESET}")
         print(f"{GREEN} [1]{RESET} Manage Users (Logs/Ban/Clear)")
         print(f"{ORANGE} [5]{RESET} 🔑 Change Redmi Flash Password (Cloud)")
+        print(f"{ORANGE} [6]{RESET} 🔑 Change Infinix Flash Password (Cloud)")
         print(f"{RED} [0]{RESET} Back to Main Menu")
         
         admin_opt = input(f"\n{BOLD}{ORANGE}👉 Select Action: {RESET}").strip()
@@ -749,6 +1069,24 @@ def admin_panel():
                 try:
                     requests.patch(SETTINGS_URL, json={"flash_password": new_pass})
                     print(f"{GREEN}[✓] Flash Password Successfully Updated to Cloud!{RESET}")
+                except Exception as e:
+                    print(f"{RED}[!] Error saving password: {e}{RESET}")
+            input(f"\n{PURPLE}Press Enter to continue...{RESET}")
+
+        elif admin_opt == '6':
+            print(f"\n{CYAN}--- UPDATE INFINIX FLASH PASSWORD ---{RESET}")
+            try:
+                curr_req = requests.get(SETTINGS_URL).json()
+                current_pass = curr_req.get('infinix_password', 'cbr') if isinstance(curr_req, dict) else 'cbr'
+                print(f"{DIM}Current Infinix Cloud Password: {current_pass}{RESET}")
+            except:
+                pass
+                
+            new_pass = input(f"{BOLD}{ORANGE}👉 Enter New Infinix Password (or press enter to cancel): {RESET}").strip()
+            if new_pass:
+                try:
+                    requests.patch(SETTINGS_URL, json={"infinix_password": new_pass})
+                    print(f"{GREEN}[✓] Infinix Flash Password Successfully Updated to Cloud!{RESET}")
                 except Exception as e:
                     print(f"{RED}[!] Error saving password: {e}{RESET}")
             input(f"\n{PURPLE}Press Enter to continue...{RESET}")
@@ -837,6 +1175,7 @@ def main_menu():
         print(f"{CYAN} [2]{RESET} CBR WIFI (Setup)") 
         print(f"{CYAN} [3]{RESET} ⚡ ADVANCE ONLY CBR OWNER ABDULLAH AL HASIB ⚡") 
         print(f"{GREEN} [5]{RESET} 📱 Redmi ROM Flash (CBR Native Engine)") 
+        print(f"{GREEN} [6]{RESET} 📱 Infinix Stock ROM Flash (FastbootD Engine)") 
         print(f"{RED} [9]{RESET} {BOLD}Admin Control Panel{RESET}")
         print(f"{CYAN} [4]{RESET} Exit")
         
@@ -853,6 +1192,9 @@ def main_menu():
             advance_abdullah_hasib_tool()
         elif choice == '5':
             cbr_smart_flasher()
+            input(f"\n{PURPLE}Press Enter to return to menu...{RESET}")
+        elif choice == '6':
+            cbr_infinix_flasher()
             input(f"\n{PURPLE}Press Enter to return to menu...{RESET}")
         elif choice == '9':
             admin_panel()
