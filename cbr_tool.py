@@ -627,28 +627,47 @@ def cbr_smart_flasher():
     with open(sh_file, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.readlines()
 
-    # --- FORCE FLASH BYPASS & DIAGNOSTIC ENGINE ---
+    # --- 🚀 THE ULTIMATE MI-FLASH NATIVE PARSING ENGINE 🚀 ---
     for line in lines:
         line = line.strip()
+        
+        # ইগ্নোর এম্পটি লাইন এবং ইকো (Echo) কমান্ড
+        if not line or line.startswith('#') or line.startswith('rem') or line.startswith('echo'):
+            continue
+
         if line.startswith('fastboot'):
-            # Force Bypass Xiaomi Anti-Rollback & Product Checks
-            if 'getvar product' in line or 'getvar anti' in line or 'anti_version' in line or 'product:' in line:
-                print(f"{ORANGE}[BYPASS]{RESET} {DIM}Skipping manufacturer restriction: {line}{RESET}")
-                continue
-                
             cmd = line.replace('`dirname $0`', script_dir).replace('%~dp0', script_dir + '/')
             cmd = cmd.replace('$*', '').replace('%*', '').replace('\\', '/')
+            
+            # --- FORCE BYPASS LOGIC (Like Official Mi Flash Tool) ---
+            is_valid_action = False
+            valid_keywords = ['flash', 'erase', 'format', 'boot', 'reboot', 'oem', 'set_active']
+            
+            # 'fastboot' এবং ফ্লাগ (-s, -w ইত্যাদি) বাদ দিয়ে আসল অ্যাকশন (Action) খোঁজা
+            cmd_parts = [p.lower() for p in cmd.split() if p.lower() != 'fastboot' and not p.startswith('-')]
+            
+            if cmd_parts:
+                action = cmd_parts[0]
+                # যদি কমান্ডটি valid action হয় এবং তাতে কোনো পাইপ/grep/getvar না থাকে, তাহলেই রান হবে!
+                if any(action.startswith(vk) for vk in valid_keywords) and '|' not in cmd and '>' not in cmd and 'grep' not in cmd:
+                    is_valid_action = True
+                    
+            if not is_valid_action:
+                print(f"{ORANGE}[BYPASS]{RESET} {DIM}Skipping script logic/check: {line}{RESET}")
+                continue
+            # --------------------------------------------------------
             
             success = False
             for attempt in range(3):
                 print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
                 
-                process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                # লাইভ আউটপুট স্ট্রিমিং এবং এরর রিপ্লেসমেন্ট (যেন কোনো হ্যাং না হয়)
+                process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
                 
                 for out_line in process.stdout:
                     line_lower = out_line.lower()
                     
-                    # CBR Auto-Diagnostic
+                    # CBR Auto-Diagnostic (এরর ট্রান্সলেটর)
                     if "error" in line_lower or "failed" in line_lower:
                         if "locked" in line_lower or "not allowed" in line_lower:
                             print(f"{RED}   [DIAGNOSTIC] Bootloader is Locked! Please unlock first.{RESET}")
@@ -673,7 +692,8 @@ def cbr_smart_flasher():
             if not success:
                 print(f"{RED}[!] Skipping partition after 3 failures to prevent brick.{RESET}")
                 
-            time.sleep(2) 
+            time.sleep(2) # Safe Breathing Delay
+            # ডামি কমান্ড দিয়ে কানেকশন জিন্দা রাখা (এতেও পাইপ নাই, তাই হ্যাং হবে না)
             subprocess.run("fastboot getvar product > /dev/null 2>&1", shell=True) 
 
     if lock_choice == '2':
