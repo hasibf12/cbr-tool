@@ -11,6 +11,7 @@ import threading
 import tarfile
 import zipfile
 import glob
+import json
 
 # উইন্ডোজ পিসির কনসোলকে ফোর্সফুলি UTF-8 এবং ANSI কালার মোডে নেওয়া
 if sys.platform == "win32":
@@ -62,6 +63,13 @@ def premium_header():
     print(f"{DIM}{'━' * 35}{RESET}\n")
 
 def check_dependencies():
+    # Auto-fix missing SSL module on low-end Termux devices
+    if platform.system().lower() != "windows":
+        try:
+            import ssl
+        except ImportError:
+            print(f"{ORANGE}[*] Repairing Termux SSL & OpenSSL modules... Please wait.{RESET}")
+            os.system("pkg update -y && pkg install openssl ca-certificates python -y")
     try:
         import colorama
         import Cryptodome
@@ -71,7 +79,7 @@ def check_dependencies():
         print(f"{ORANGE}[!] Libraries missing. Installing packages silently...{RESET}")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "colorama", "pycryptodomex", "miunlock", "requests", "--quiet"])
 
-# 🚀 NEW: OTG DRIVERS & TERMUX API SETUP (Like MiTool) 🚀
+# 🚀 NEW: OTG DRIVERS, POPUP FORCER & TERMUX API SETUP (Like MiTool) 🚀
 def setup_otg_drivers():
     if platform.system().lower() != "windows":
         try:
@@ -85,14 +93,33 @@ def setup_otg_drivers():
         except:
             pass
 
+def get_fastboot_bin():
+    if platform.system().lower() != "windows":
+        if shutil.which("termux-fastboot") is not None:
+            return "termux-fastboot"
+    return "fastboot"
+
+def trigger_otg_popup():
+    if platform.system().lower() != "windows" and shutil.which("termux-usb") is not None:
+        try:
+            res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=4)
+            if res.stdout.strip():
+                usb_devs = json.loads(res.stdout.strip())
+                if isinstance(usb_devs, list) and len(usb_devs) > 0:
+                    for dev in usb_devs:
+                        print(f"{CYAN}[OTG]{RESET} Requesting USB Permission for {dev} (Tap 'OK' on screen popup)...")
+                        subprocess.run(["termux-usb", "-r", dev], capture_output=True, text=True, timeout=6)
+        except Exception:
+            pass
+
 def check_fastboot():
-    if shutil.which("fastboot") is None:
+    if shutil.which("fastboot") is None and shutil.which("termux-fastboot") is None:
         print(f"{RED}[!] Fastboot is not installed or not in PATH!{RESET}")
         print(f"{ORANGE}[*] Auto-installing Android platform-tools (Fastboot/ADB)... Please wait.{RESET}")
         os.system("pkg update -y > /dev/null 2>&1")
         os.system("pkg install android-tools -y")
         time.sleep(2)
-        if shutil.which("fastboot") is None:
+        if shutil.which("fastboot") is None and shutil.which("termux-fastboot") is None:
             print(f"{RED}[!] Auto-install failed! Please install manually: pkg install android-tools{RESET}")
             sys.exit(1)
         else:
@@ -100,17 +127,40 @@ def check_fastboot():
 
 def get_device_info():
     print(f"{CYAN}[INFO]{RESET} Fetching device details...")
-    try:
-        result = subprocess.run(["fastboot", "getvar", "product"], capture_output=True, text=True)
-        if "product:" in result.stderr:
-            product_name = result.stderr.split("product:")[1].split()[0]
-            print(f"{GREEN}[✓] Connected Device: {product_name}{RESET}")
-            return product_name
-        else:
-            print(f"{ORANGE}[!] Could not read device product name.{RESET}")
-            return None
-    except Exception:
-        return None
+    fb_bin = get_fastboot_bin()
+    
+    for attempt in range(3):
+        trigger_otg_popup()
+        try:
+            # First check if device is listed in fastboot devices with timeout so it never hangs
+            dev_check = subprocess.run([fb_bin, "devices"], capture_output=True, text=True, timeout=8)
+            
+            # Now query product variable with anti-freeze timeout
+            result = subprocess.run([fb_bin, "getvar", "product"], capture_output=True, text=True, timeout=8)
+            combined_out = (result.stderr or "") + "\n" + (result.stdout or "")
+            
+            if "product:" in combined_out:
+                product_name = combined_out.split("product:")[1].split()[0].strip()
+                print(f"{GREEN}[✓] Connected Device: {product_name}{RESET}")
+                return product_name
+            elif dev_check.stdout and dev_check.stdout.strip():
+                serial_id = dev_check.stdout.strip().split()[0]
+                print(f"{GREEN}[✓] Connected Device: {serial_id}{RESET}")
+                return serial_id
+            else:
+                print(f"{ORANGE}[!] Device not responding (Attempt {attempt+1}/3). triggering OTG popup...{RESET}")
+                time.sleep(2)
+        except subprocess.TimeoutExpired:
+            print(f"{ORANGE}[!] Waiting for OTG Allow Popup... Please tap 'Allow/OK' on screen! ({attempt+1}/3){RESET}")
+            print(f"{DIM}    (Tip: Make sure 'OTG Connection' is ON in Phone Settings & Termux:API app is installed){RESET}")
+            # Fallback attempt with alternative binary if available
+            fb_bin = "fastboot" if fb_bin == "termux-fastboot" else get_fastboot_bin()
+            time.sleep(2)
+        except Exception:
+            time.sleep(1)
+            
+    print(f"{ORANGE}[!] Could not read device product name. Check OTG cable & Fastboot mode.{RESET}")
+    return None
 
 def authenticate():
     premium_header()
@@ -305,7 +355,12 @@ def bootloader_unlock_tool():
         region = "global"
 
     print(f"\n{CYAN}[FASTBOOT]{RESET} Scanning active device connection status...")
-    subprocess.run("fastboot devices", shell=True)
+    trigger_otg_popup()
+    fb_bin = get_fastboot_bin()
+    try:
+        subprocess.run(f"{fb_bin} devices", shell=True, timeout=8)
+    except Exception:
+        pass
     time.sleep(1)
     
     get_device_info()
@@ -627,6 +682,8 @@ def cbr_smart_flasher():
     with open(sh_file, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.readlines()
 
+    fb_bin = get_fastboot_bin()
+
     # --- 🚀 THE ULTIMATE MI-FLASH NATIVE PARSING ENGINE 🚀 ---
     for line in lines:
         line = line.strip()
@@ -656,6 +713,9 @@ def cbr_smart_flasher():
                 print(f"{ORANGE}[BYPASS]{RESET} {DIM}Skipping script logic/check: {line}{RESET}")
                 continue
             # --------------------------------------------------------
+            
+            if fb_bin != "fastboot" and cmd.startswith("fastboot "):
+                cmd = fb_bin + cmd[8:]
             
             success = False
             for attempt in range(3):
@@ -687,6 +747,7 @@ def cbr_smart_flasher():
                     break
                 else:
                     print(f"{RED}[!] Failed. OTG Retry ({attempt+1}/3)...{RESET}")
+                    trigger_otg_popup()
                     time.sleep(3)
                     
             if not success:
@@ -694,15 +755,18 @@ def cbr_smart_flasher():
                 
             time.sleep(2) # Safe Breathing Delay
             # ডামি কমান্ড দিয়ে কানেকশন জিন্দা রাখা (এতেও পাইপ নাই, তাই হ্যাং হবে না)
-            subprocess.run("fastboot getvar product > /dev/null 2>&1", shell=True) 
+            try:
+                subprocess.run(f"{fb_bin} getvar product > /dev/null 2>&1", shell=True, timeout=5)
+            except Exception:
+                pass
 
     if lock_choice == '2':
         print(f"\n{ORANGE}[LOCKING BOOTLOADER]{RESET}")
-        subprocess.run("fastboot oem lock", shell=True)
+        subprocess.run(f"{fb_bin} oem lock", shell=True)
         
     print(f"\n{GREEN}[✓] FLASHING COMPLETED SUCCESSFULLY!{RESET}")
     print(f"{CYAN}[*] Rebooting Phone...{RESET}")
-    subprocess.run("fastboot reboot", shell=True)
+    subprocess.run(f"{fb_bin} reboot", shell=True)
     send_activity_log("Successfully Completed ROM Flashing")
     
     # Disable Wake-Lock after finish
@@ -905,20 +969,28 @@ def cbr_infinix_flasher():
         os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
+    fb_bin = get_fastboot_bin()
+
     def wait_for_fastboot_device(mode_label):
         print(f"{CYAN}[*] Waiting for phone to reconnect in {mode_label}...{RESET}")
         time.sleep(4)
         for _ in range(30):
-            res = subprocess.run(["fastboot", "devices"], capture_output=True, text=True)
-            if res.stdout.strip():
-                print(f"{GREEN}[✓] Device Reconnected in {mode_label}!{RESET}")
-                time.sleep(2)
-                return True
+            trigger_otg_popup()
+            try:
+                res = subprocess.run([fb_bin, "devices"], capture_output=True, text=True, timeout=6)
+                if res.stdout.strip():
+                    print(f"{GREEN}[✓] Device Reconnected in {mode_label}!{RESET}")
+                    time.sleep(2)
+                    return True
+            except Exception:
+                pass
             time.sleep(2)
         print(f"{ORANGE}[!] Reconnect check timed out, continuing sequence...{RESET}")
         return False
 
     def execute_single_fastboot_cmd(cmd_str, step_label, allow_skip=False):
+        if fb_bin != "fastboot" and cmd_str.startswith("fastboot "):
+            cmd_str = fb_bin + cmd_str[8:]
         success = False
         for attempt in range(3):
             print(f"\n{ORANGE}[{step_label} | RUNNING]{RESET} {cmd_str}")
@@ -942,9 +1014,13 @@ def cbr_infinix_flasher():
                     print(f"{ORANGE}[!] Optional partition/action returned non-zero, moving to next step safely...{RESET}")
                     break
                 print(f"{RED}[!] Command Failed. OTG Auto-Retry ({attempt+1}/3)...{RESET}")
+                trigger_otg_popup()
                 time.sleep(3)
         time.sleep(2)
-        subprocess.run("fastboot getvar product > /dev/null 2>&1", shell=True)
+        try:
+            subprocess.run(f"{fb_bin} getvar product > /dev/null 2>&1", shell=True, timeout=5)
+        except Exception:
+            pass
         return success
 
     def flash_partition_file(part_name, img_filename, step_label, extra_flags=""):
