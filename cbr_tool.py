@@ -103,13 +103,15 @@ def trigger_otg_popup(silent=False):
     if platform.system().lower() != "windows" and shutil.which("termux-usb") is not None:
         try:
             res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=4)
-            if res.stdout.strip():
+            if res.stdout and res.stdout.strip():
                 usb_devs = json.loads(res.stdout.strip())
                 if isinstance(usb_devs, list) and len(usb_devs) > 0:
                     for dev in usb_devs:
                         if not silent:
                             print(f"{CYAN}[OTG]{RESET} Requesting USB Permission for {dev} (Tap 'OK/Allow' on popup)...")
                         subprocess.run(["termux-usb", "-r", dev], capture_output=True, text=True, timeout=6)
+                    # Allow Android USB service a brief moment to register permission grant
+                    time.sleep(1.2)
                     return True
         except Exception:
             pass
@@ -130,37 +132,51 @@ def check_fastboot():
 
 def get_device_info():
     print(f"{CYAN}[INFO]{RESET} Fetching device details...")
-    fb_bin = get_fastboot_bin()
     
     for attempt in range(5):
+        fb_bin = get_fastboot_bin()
         trigger_otg_popup()
+        
+        # Step 1: Check fastboot devices first (Fast & Reliable on both Redmi & Infinix/MTK)
         try:
-            # First check if device is listed in fastboot devices with timeout so it never hangs
-            dev_check = subprocess.run([fb_bin, "devices"], capture_output=True, text=True, timeout=8)
-            
-            # Now query product variable with anti-freeze timeout
-            result = subprocess.run([fb_bin, "getvar", "product"], capture_output=True, text=True, timeout=8)
+            dev_check = subprocess.run([fb_bin, "devices"], capture_output=True, text=True, timeout=6)
+            dev_out = (dev_check.stdout or "").strip()
+            if dev_out and "permission" not in dev_out.lower():
+                serial_id = dev_out.split()[0].strip()
+                product_name = serial_id
+                # Step 2: Optional non-blocking product name check (if MTK times out, serial_id is still returned!)
+                try:
+                    res_prod = subprocess.run([fb_bin, "getvar", "product"], capture_output=True, text=True, timeout=3)
+                    comb = (res_prod.stderr or "") + "\n" + (res_prod.stdout or "")
+                    if "product:" in comb:
+                        p_val = comb.split("product:")[1].split()[0].strip()
+                        if p_val:
+                            product_name = p_val
+                except Exception:
+                    pass
+                print(f"{GREEN}[✓] Connected Device: {product_name}{RESET}")
+                return product_name
+        except subprocess.TimeoutExpired:
+            pass
+        except Exception:
+            pass
+
+        # Step 3: Direct getvar product check if 'fastboot devices' was empty
+        try:
+            result = subprocess.run([fb_bin, "getvar", "product"], capture_output=True, text=True, timeout=5)
             combined_out = (result.stderr or "") + "\n" + (result.stdout or "")
-            
             if "product:" in combined_out:
                 product_name = combined_out.split("product:")[1].split()[0].strip()
                 print(f"{GREEN}[✓] Connected Device: {product_name}{RESET}")
                 return product_name
-            elif dev_check.stdout and dev_check.stdout.strip():
-                serial_id = dev_check.stdout.strip().split()[0]
-                print(f"{GREEN}[✓] Connected Device: {serial_id}{RESET}")
-                return serial_id
-            else:
-                print(f"{ORANGE}[!] Device not responding (Attempt {attempt+1}/5). Re-triggering OTG popup...{RESET}")
-                time.sleep(2)
         except subprocess.TimeoutExpired:
-            print(f"{ORANGE}[!] Waiting for OTG Allow Popup... Please tap 'Allow/OK' on screen! ({attempt+1}/5){RESET}")
-            print(f"{DIM}    (Tip: Make sure 'OTG Connection' is ON in Phone Settings & Termux:API app is installed){RESET}")
-            # Fallback attempt with alternative binary if available
-            fb_bin = "fastboot" if fb_bin == "termux-fastboot" else get_fastboot_bin()
-            time.sleep(2)
+            pass
         except Exception:
-            time.sleep(1)
+            pass
+
+        print(f"{ORANGE}[!] Waiting for OTG Allow Popup... Please tap 'Allow/OK' on screen! ({attempt+1}/5){RESET}")
+        print(f"{DIM}    (Tip: Make sure 'OTG Connection' is ON in Phone Settings & Termux:API app is installed){RESET}")
+        time.sleep(2)
             
     print(f"{ORANGE}[!] Could not read device product name. Check OTG cable & Fastboot mode.{RESET}")
     return None
@@ -759,7 +775,7 @@ def cbr_smart_flasher():
             time.sleep(2) # Safe Breathing Delay
             # ডামি কমান্ড দিয়ে কানেকশন জিন্দা রাখা (এতেও পাইপ নাই, তাই হ্যাং হবে না)
             try:
-                subprocess.run(f"{fb_bin} getvar product > /dev/null 2>&1", shell=True, timeout=5)
+                subprocess.run(f"{fb_bin} devices > /dev/null 2>&1", shell=True, timeout=4)
             except Exception:
                 pass
 
@@ -1086,18 +1102,11 @@ def cbr_infinix_flasher():
             fb_bin = get_fastboot_bin()
             try:
                 res = subprocess.run([fb_bin, "devices"], capture_output=True, text=True, timeout=5)
-                if res.stdout and res.stdout.strip():
-                    dev_id = res.stdout.strip().split()[0]
+                dev_out = (res.stdout or "").strip()
+                if dev_out and "permission" not in dev_out.lower():
+                    dev_id = dev_out.split()[0]
                     print(f"\n{GREEN}[✓] Device Caught & Reconnected in {mode_label} ({dev_id})!{RESET}")
-                    time.sleep(2)
-                    return True
-                
-                # Also test direct getvar product in case fastboot devices output is delayed
-                res2 = subprocess.run([fb_bin, "getvar", "product"], capture_output=True, text=True, timeout=5)
-                comb = (res2.stderr or "") + (res2.stdout or "")
-                if "product:" in comb:
-                    print(f"\n{GREEN}[✓] Device Caught & Verified in {mode_label}!{RESET}")
-                    time.sleep(2)
+                    time.sleep(1.5)
                     return True
             except Exception:
                 pass
@@ -1114,7 +1123,7 @@ def cbr_infinix_flasher():
         trigger_otg_popup(silent=True)
         fb_bin = get_fastboot_bin()
         try:
-            res = subprocess.run([fb_bin, "getvar", "is-userspace"], capture_output=True, text=True, timeout=6)
+            res = subprocess.run([fb_bin, "getvar", "is-userspace"], capture_output=True, text=True, timeout=4)
             comb = ((res.stderr or "") + "\n" + (res.stdout or "")).lower()
             if "is-userspace: yes" in comb:
                 return True
@@ -1158,10 +1167,10 @@ def cbr_infinix_flasher():
                 wait_for_fastboot_device("Active Fastboot Session")
                 time.sleep(2)
                 
-        time.sleep(2)
+        time.sleep(1.5)
         if not is_reboot_cmd:
             try:
-                subprocess.run(f"{fb_bin} getvar product > /dev/null 2>&1", shell=True, timeout=5)
+                subprocess.run(f"{fb_bin} devices > /dev/null 2>&1", shell=True, timeout=4)
             except Exception:
                 pass
         return success
