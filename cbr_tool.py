@@ -99,7 +99,7 @@ def get_fastboot_bin():
             return "termux-fastboot"
     return "fastboot"
 
-def trigger_otg_popup():
+def trigger_otg_popup(silent=False):
     if platform.system().lower() != "windows" and shutil.which("termux-usb") is not None:
         try:
             res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=4)
@@ -107,10 +107,13 @@ def trigger_otg_popup():
                 usb_devs = json.loads(res.stdout.strip())
                 if isinstance(usb_devs, list) and len(usb_devs) > 0:
                     for dev in usb_devs:
-                        print(f"{CYAN}[OTG]{RESET} Requesting USB Permission for {dev} (Tap 'OK' on screen popup)...")
+                        if not silent:
+                            print(f"{CYAN}[OTG]{RESET} Requesting USB Permission for {dev} (Tap 'OK/Allow' on popup)...")
                         subprocess.run(["termux-usb", "-r", dev], capture_output=True, text=True, timeout=6)
+                    return True
         except Exception:
             pass
+    return False
 
 def check_fastboot():
     if shutil.which("fastboot") is None and shutil.which("termux-fastboot") is None:
@@ -129,7 +132,7 @@ def get_device_info():
     print(f"{CYAN}[INFO]{RESET} Fetching device details...")
     fb_bin = get_fastboot_bin()
     
-    for attempt in range(3):
+    for attempt in range(5):
         trigger_otg_popup()
         try:
             # First check if device is listed in fastboot devices with timeout so it never hangs
@@ -148,10 +151,10 @@ def get_device_info():
                 print(f"{GREEN}[✓] Connected Device: {serial_id}{RESET}")
                 return serial_id
             else:
-                print(f"{ORANGE}[!] Device not responding (Attempt {attempt+1}/3). triggering OTG popup...{RESET}")
+                print(f"{ORANGE}[!] Device not responding (Attempt {attempt+1}/5). Re-triggering OTG popup...{RESET}")
                 time.sleep(2)
         except subprocess.TimeoutExpired:
-            print(f"{ORANGE}[!] Waiting for OTG Allow Popup... Please tap 'Allow/OK' on screen! ({attempt+1}/3){RESET}")
+            print(f"{ORANGE}[!] Waiting for OTG Allow Popup... Please tap 'Allow/OK' on screen! ({attempt+1}/5){RESET}")
             print(f"{DIM}    (Tip: Make sure 'OTG Connection' is ON in Phone Settings & Termux:API app is installed){RESET}")
             # Fallback attempt with alternative binary if available
             fb_bin = "fastboot" if fb_bin == "termux-fastboot" else get_fastboot_bin()
@@ -777,6 +780,7 @@ def cbr_smart_flasher():
 # ==========================================
 def cbr_infinix_flasher():
     import requests
+    import re
     # 🛡️ Anti-Disconnect: Wake-Lock Shield 🛡️
     os.system("termux-wake-lock > /dev/null 2>&1")
     
@@ -942,14 +946,27 @@ def cbr_infinix_flasher():
     # Locate exact directory containing ROM images / scatter file
     rom_img_dir = None
     scatter_found = None
+    scatter_full_path = None
     for root, dirs, files in os.walk(extract_folder):
-        for f_name in files:
-            if "scatter" in f_name.lower() and (f_name.endswith(".txt") or f_name.endswith(".xml")):
+        # Prefer .txt scatter file first (e.g. MT6789_Android_scatter.txt), then .xml
+        for f_name in sorted(files):
+            if "scatter" in f_name.lower() and f_name.endswith(".txt"):
                 scatter_found = f_name
+                scatter_full_path = os.path.join(root, f_name)
                 rom_img_dir = root
                 break
-            elif f_name.lower() == "super.img":
-                rom_img_dir = root
+        if not scatter_found:
+            for f_name in sorted(files):
+                if "scatter" in f_name.lower() and f_name.endswith(".xml"):
+                    scatter_found = f_name
+                    scatter_full_path = os.path.join(root, f_name)
+                    rom_img_dir = root
+                    break
+        if not rom_img_dir:
+            for f_name in files:
+                if f_name.lower() == "super.img":
+                    rom_img_dir = root
+                    break
         if rom_img_dir and scatter_found:
             break
 
@@ -962,6 +979,91 @@ def cbr_infinix_flasher():
         print(f"{GREEN}[✓] Detected Scatter File: {scatter_found}{RESET}")
     print(f"{CYAN}[✓] ROM Image Directory Ready: {rom_img_dir}{RESET}")
 
+    # =========================================================================
+    # 🛡️ SMART SCATTER PARSER & ANTI-BRICK ENGINE (WITH init_boot SUPPORT) 🛡️
+    # =========================================================================
+    risky_blacklist = {
+        "preloader", "preloader_a", "preloader_b", "preloader_raw", "preloader_emmc", "preloader_ufs",
+        "pgpt", "gpt", "sgpt", "nvram", "nvdata", "nvcfg", "protect1", "protect2",
+        "persist", "seccfg", "proinfo", "sec1", "efuse", "otp", "bmtpool",
+        "boot_para", "para", "expdb", "frp", "metadata", "flashinfo", " keystore", " Russ"
+    }
+
+    vbmeta_base_names = {"vbmeta", "vbmeta_system", "vbmeta_vendor"}
+
+    # Default baseline list (including init_boot) so nothing is ever missed
+    baseline_ab_partitions = [
+        ("boot", "boot.img"),
+        ("init_boot", "init_boot.img"),
+        ("dtbo", "dtbo.img"),
+        ("gz", "gz.img"),
+        ("lk", "lk.img"),
+        ("md1img", "md1img.img"),
+        ("scp", "scp.img"),
+        ("spmfw", "spmfw.img"),
+        ("sspm", "sspm.img"),
+        ("tee", "tee.img"),
+    ]
+
+    scatter_ab_map = {}      # base_part_name -> file_name
+    scatter_single_map = {}  # single_part_name -> file_name
+    scatter_vbmeta_map = {}  # vbmeta_base_name -> file_name
+
+    # Seed with baseline partitions (including init_boot)
+    for b_part, b_file in baseline_ab_partitions:
+        scatter_ab_map[b_part] = b_file
+    scatter_single_map["super"] = "super.img"
+    scatter_single_map["userdata"] = "userdata.img"
+    scatter_vbmeta_map["vbmeta"] = "vbmeta.img"
+    scatter_vbmeta_map["vbmeta_system"] = "vbmeta_system.img"
+    scatter_vbmeta_map["vbmeta_vendor"] = "vbmeta_vendor.img"
+
+    if scatter_full_path and os.path.exists(scatter_full_path):
+        print(f"\n{CYAN}[SCATTER PARSER]{RESET} Analyzing {scatter_found} for safe partitions & init_boot...")
+        try:
+            with open(scatter_full_path, 'r', encoding='utf-8', errors='ignore') as sf:
+                content = sf.read()
+
+            parsed_entries = []
+            if scatter_full_path.endswith(".txt"):
+                blocks = content.split("partition_index:")
+                for blk in blocks[1:]:
+                    p_name_m = re.search(r"partition_name:\s*([^\s\r\n]+)", blk)
+                    f_name_m = re.search(r"file_name:\s*([^\s\r\n]+)", blk)
+                    is_dl_m = re.search(r"is_download:\s*([^\s\r\n]+)", blk)
+                    if p_name_m and f_name_m:
+                        p_name = p_name_m.group(1).strip().strip('"\'')
+                        f_name = f_name_m.group(1).strip().strip('"\'')
+                        is_dl = is_dl_m.group(1).strip().lower() if is_dl_m else "true"
+                        if is_dl == "true" and f_name.lower() != "none":
+                            parsed_entries.append((p_name, f_name))
+            elif scatter_full_path.endswith(".xml"):
+                for m in re.finditer(r'partition_name="([^"]+)"[^>]*file_name="([^"]+)"', content):
+                    p_name, f_name = m.group(1).strip(), m.group(2).strip()
+                    if f_name.lower() != "none":
+                        parsed_entries.append((p_name, f_name))
+
+            for p_name, f_name in parsed_entries:
+                p_low = p_name.lower()
+                base_p = p_low[:-2] if (p_low.endswith("_a") or p_low.endswith("_b")) else p_low
+
+                if p_low in risky_blacklist or base_p in risky_blacklist or "preloader" in p_low:
+                    print(f"{ORANGE}   [SAFE-SKIP]{RESET} {DIM}Blocking risky partition from scatter: {p_name} ({f_name}){RESET}")
+                    continue
+
+                if base_p in vbmeta_base_names or p_low.startswith("vbmeta"):
+                    scatter_vbmeta_map[base_p] = f_name
+                elif base_p in ("super", "userdata"):
+                    scatter_single_map[base_p] = f_name
+                else:
+                    if base_p not in scatter_ab_map:
+                        print(f"{GREEN}   [SCATTER-ADD]{RESET} Added dynamic partition from scatter: {BOLD}{base_p}{RESET} -> {f_name}")
+                    else:
+                        scatter_ab_map[base_p] = f_name
+                    scatter_ab_map[base_p] = f_name
+        except Exception as e:
+            print(f"{ORANGE}[!] Scatter parse notice: {e}. Using verified partition list.{RESET}")
+
     print(f"\n{CYAN}[PRE-CHECK]{RESET} Checking Fastboot / FastbootD Device Connection...")
     connected_device = get_device_info()
     if not connected_device:
@@ -971,30 +1073,67 @@ def cbr_infinix_flasher():
 
     fb_bin = get_fastboot_bin()
 
+    # 🚀 NON-STOP OTG POPUP CATCHER & RECONNECT ENGINE 🚀
     def wait_for_fastboot_device(mode_label):
-        print(f"{CYAN}[*] Waiting for phone to reconnect in {mode_label}...{RESET}")
-        time.sleep(4)
-        for _ in range(30):
-            trigger_otg_popup()
+        nonlocal fb_bin
+        print(f"\n{CYAN}[*] Waiting for phone to connect in {BOLD}{mode_label}{RESET}...")
+        print(f"{ORANGE}[*] Keep watching phone screen! If OTG Popup appears, tap 'Allow / OK' immediately!{RESET}")
+        time.sleep(3)
+        
+        for attempt in range(1, 61):
+            # Trigger USB permission popup on every cycle so new USB descriptor is caught immediately
+            trigger_otg_popup(silent=(attempt % 3 != 1))
+            fb_bin = get_fastboot_bin()
             try:
-                res = subprocess.run([fb_bin, "devices"], capture_output=True, text=True, timeout=6)
-                if res.stdout.strip():
-                    print(f"{GREEN}[✓] Device Reconnected in {mode_label}!{RESET}")
+                res = subprocess.run([fb_bin, "devices"], capture_output=True, text=True, timeout=5)
+                if res.stdout and res.stdout.strip():
+                    dev_id = res.stdout.strip().split()[0]
+                    print(f"\n{GREEN}[✓] Device Caught & Reconnected in {mode_label} ({dev_id})!{RESET}")
+                    time.sleep(2)
+                    return True
+                
+                # Also test direct getvar product in case fastboot devices output is delayed
+                res2 = subprocess.run([fb_bin, "getvar", "product"], capture_output=True, text=True, timeout=5)
+                comb = (res2.stderr or "") + (res2.stdout or "")
+                if "product:" in comb:
+                    print(f"\n{GREEN}[✓] Device Caught & Verified in {mode_label}!{RESET}")
                     time.sleep(2)
                     return True
             except Exception:
                 pass
+                
+            sys.stdout.write(f"\r\033[K{ORANGE}>> [OTG CATCHER]{RESET} Scanning USB & Sending Allow Popup for {mode_label}... ({attempt}/60)")
+            sys.stdout.flush()
             time.sleep(2)
-        print(f"{ORANGE}[!] Reconnect check timed out, continuing sequence...{RESET}")
+            
+        print(f"\n{ORANGE}[!] Reconnect wait finished, attempting to continue sequence...{RESET}")
         return False
 
-    def execute_single_fastboot_cmd(cmd_str, step_label, allow_skip=False):
-        if fb_bin != "fastboot" and cmd_str.startswith("fastboot "):
-            cmd_str = fb_bin + cmd_str[8:]
+    def is_device_in_fastbootd():
+        nonlocal fb_bin
+        trigger_otg_popup(silent=True)
+        fb_bin = get_fastboot_bin()
+        try:
+            res = subprocess.run([fb_bin, "getvar", "is-userspace"], capture_output=True, text=True, timeout=6)
+            comb = ((res.stderr or "") + "\n" + (res.stdout or "")).lower()
+            if "is-userspace: yes" in comb:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def execute_single_fastboot_cmd(cmd_str, step_label, allow_skip=False, is_reboot_cmd=False):
+        nonlocal fb_bin
         success = False
         for attempt in range(3):
-            print(f"\n{ORANGE}[{step_label} | RUNNING]{RESET} {cmd_str}")
-            process = subprocess.Popen(cmd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
+            trigger_otg_popup(silent=True)
+            fb_bin = get_fastboot_bin()
+            run_cmd = cmd_str
+            if fb_bin != "fastboot" and run_cmd.startswith("fastboot "):
+                run_cmd = fb_bin + run_cmd[8:]
+                
+            print(f"\n{ORANGE}[{step_label} | RUNNING]{RESET} {run_cmd}")
+            process = subprocess.Popen(run_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
             for out_line in process.stdout:
                 line_lower = out_line.lower()
                 if "error" in line_lower or "failed" in line_lower:
@@ -1002,25 +1141,29 @@ def cbr_infinix_flasher():
                         print(f"{RED}   [DIAGNOSTIC] Bootloader is Locked! Please unlock first.{RESET}")
                     elif "not found" in line_lower or "doesn't exist" in line_lower:
                         print(f"{ORANGE}   [DIAGNOSTIC] Partition/Variable not found on this model.{RESET}")
-                    elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower:
-                        print(f"{RED}   [DIAGNOSTIC] USB OTG Glitch Detected! Retrying...{RESET}")
+                    elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower or "no permissions" in line_lower:
+                        print(f"{RED}   [DIAGNOSTIC] USB OTG Glitch/Permission Drop! Re-triggering Popup...{RESET}")
+                        trigger_otg_popup(silent=False)
                 print(f"{DIM}   >> {out_line.strip()}{RESET}")
             process.wait()
-            if process.returncode == 0:
+            
+            if process.returncode == 0 or is_reboot_cmd:
                 success = True
                 break
             else:
                 if allow_skip and attempt == 0:
                     print(f"{ORANGE}[!] Optional partition/action returned non-zero, moving to next step safely...{RESET}")
                     break
-                print(f"{RED}[!] Command Failed. OTG Auto-Retry ({attempt+1}/3)...{RESET}")
-                trigger_otg_popup()
-                time.sleep(3)
+                print(f"{RED}[!] Command Failed. Re-catching OTG & Auto-Retrying ({attempt+1}/3)...{RESET}")
+                wait_for_fastboot_device("Active Fastboot Session")
+                time.sleep(2)
+                
         time.sleep(2)
-        try:
-            subprocess.run(f"{fb_bin} getvar product > /dev/null 2>&1", shell=True, timeout=5)
-        except Exception:
-            pass
+        if not is_reboot_cmd:
+            try:
+                subprocess.run(f"{fb_bin} getvar product > /dev/null 2>&1", shell=True, timeout=5)
+            except Exception:
+                pass
         return success
 
     def flash_partition_file(part_name, img_filename, step_label, extra_flags=""):
@@ -1039,62 +1182,42 @@ def cbr_infinix_flasher():
 
     # --- STEP 2: BOOT TO FASTBOOTD MODE ---
     print(f"\n{CYAN}{BOLD}>>> STAGE 1: FASTBOOTD MODE OPERATIONS <<<{RESET}")
-    execute_single_fastboot_cmd("fastboot reboot fastboot", "STEP 2-A")
-    wait_for_fastboot_device("FastbootD Mode")
+    if is_device_in_fastbootd():
+        print(f"{GREEN}[✓] Phone is already in FastbootD Mode! Proceeding directly...{RESET}")
+    else:
+        print(f"{CYAN}[*] Phone is in normal Fastboot mode. Switching to FastbootD Mode...{RESET}")
+        execute_single_fastboot_cmd("fastboot reboot fastboot", "STEP 2-A", is_reboot_cmd=True)
+        wait_for_fastboot_device("FastbootD Mode")
 
     execute_single_fastboot_cmd("fastboot delete-logical-partition product", "STEP 2-B", allow_skip=True)
     execute_single_fastboot_cmd("fastboot erase system", "STEP 2-C", allow_skip=True)
-    flash_partition_file("super", "super.img", "STEP 2-D")
+    flash_partition_file("super", scatter_single_map.get("super", "super.img"), "STEP 2-D")
     execute_single_fastboot_cmd("fastboot -w", "STEP 2-E", allow_skip=True)
 
     # --- BOOTLOADER MODE ---
-    print(f"\n{CYAN}{BOLD}>>> STAGE 2: BOOTLOADER MODE FLASHING <<<{RESET}")
-    execute_single_fastboot_cmd("fastboot reboot bootloader", "BOOTLOADER-SWITCH")
+    print(f"\n{CYAN}{BOLD}>>> STAGE 2: BOOTLOADER MODE FLASHING (SCATTER VERIFIED) <<<{RESET}")
+    execute_single_fastboot_cmd("fastboot reboot bootloader", "BOOTLOADER-SWITCH", is_reboot_cmd=True)
     wait_for_fastboot_device("Bootloader Mode")
 
-    bootloader_flash_list = [
-        ("boot_a", "boot.img", "STEP F"),
-        ("boot_b", "boot.img", "STEP G"),
-        ("dtbo_a", "dtbo.img", "STEP A"),
-        ("dtbo_b", "dtbo.img", "STEP B"),
-        ("gz_a", "gz.img", "STEP C"),
-        ("gz_b", "gz.img", "STEP D"),
-        ("lk_a", "lk.img", "STEP E"),
-        ("lk_b", "lk.img", "STEP F"),
-        ("md1img_a", "md1img.img", "STEP G"),
-        ("md1img_b", "md1img.img", "STEP H"),
-        ("scp_a", "scp.img", "STEP I"),
-        ("scp_b", "scp.img", "STEP J"),
-        ("spmfw_a", "spmfw.img", "STEP H-2"),
-        ("spmfw_b", "spmfw.img", "STEP I-2"),
-        ("sspm_a", "sspm.img", "STEP K"),
-        ("sspm_b", "sspm.img", "STEP L"),
-        ("tee_a", "tee.img", "STEP M"),
-        ("tee_b", "tee.img", "STEP N"),
-        ("userdata", "userdata.img", "STEP O"),
-    ]
+    step_counter = 1
+    for base_part, img_file in scatter_ab_map.items():
+        flash_partition_file(f"{base_part}_a", img_file, f"PART-{step_counter}A")
+        flash_partition_file(f"{base_part}_b", img_file, f"PART-{step_counter}B")
+        step_counter += 1
 
-    for part_name, img_file, label in bootloader_flash_list:
-        flash_partition_file(part_name, img_file, label)
+    # Flash userdata at end of Stage 2
+    flash_partition_file("userdata", scatter_single_map.get("userdata", "userdata.img"), "STEP-USERDATA")
 
     # --- VBMETA VERITY DISABLE ---
     print(f"\n{CYAN}{BOLD}>>> STAGE 3: VBMETA VERITY & VERIFICATION DISABLE <<<{RESET}")
     vbmeta_flags = "--disable-verity --disable-verification"
-    vbmeta_flash_list = [
-        ("vbmeta_a", "vbmeta.img", "VBMETA-A"),
-        ("vbmeta_b", "vbmeta.img", "VBMETA-B"),
-        ("vbmeta_system_a", "vbmeta_system.img", "VBMETA-SYS-A"),
-        ("vbmeta_system_b", "vbmeta_system.img", "VBMETA-SYS-B"),
-        ("vbmeta_vendor_a", "vbmeta_vendor.img", "VBMETA-VEN-A"),
-        ("vbmeta_vendor_b", "vbmeta_vendor.img", "VBMETA-VEN-B"),
-    ]
-
-    for part_name, img_file, label in vbmeta_flash_list:
-        flash_partition_file(part_name, img_file, label, extra_flags=vbmeta_flags)
+    for vb_base, vb_file in scatter_vbmeta_map.items():
+        flash_partition_file(f"{vb_base}_a", vb_file, f"{vb_base.upper()}-A", extra_flags=vbmeta_flags)
+        flash_partition_file(f"{vb_base}_b", vb_file, f"{vb_base.upper()}-B", extra_flags=vbmeta_flags)
 
     # --- REBOOT TO RECOVERY (FACTORY RESET) ---
     print(f"\n{CYAN}{BOLD}>>> STAGE 4: REBOOTING TO RECOVERY (FACTORY RESET) <<<{RESET}")
-    execute_single_fastboot_cmd("fastboot reboot recovery", "FINAL-RECOVERY-BOOT", allow_skip=True)
+    execute_single_fastboot_cmd("fastboot reboot recovery", "FINAL-RECOVERY-BOOT", allow_skip=True, is_reboot_cmd=True)
 
     print(f"\n{GREEN}{BOLD}[✓] INFINIX STOCK ROM FLASHING COMPLETED 100% SUCCESSFULLY!{RESET}")
     print(f"{ORANGE}[*] Phone is booting into Recovery Mode. Please perform Factory Reset if prompted.{RESET}")
