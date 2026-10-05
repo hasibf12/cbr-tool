@@ -32,9 +32,13 @@ DIM = "\033[2m"
 SECURE_PASSWORD_HASH = "ed30e4a879af03333d3ba7a782b941bb92ce5fba9d6c60be387c1688e2b5ea40"
 ADVANCE_PASSWORD_HASH = hashlib.sha256(bytes.fromhex("6362723031393736363334303435")).hexdigest()
 
-# 🛡️ SUPER SECURE FIREBASE SECRET KEY 🛡️
+# 🛡️️ SUPER SECURE FIREBASE SECRET KEY 🛡️
 FIREBASE_SECRET = "W2u5TaOnnVWpdOwkCSsLDPuUzrXnSiC0o7ngf7zJ"
 SETTINGS_URL = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Settings.json?auth={FIREBASE_SECRET}"
+
+# 🔌 GLOBAL SMART OTG PORT TRACKERS 🔌
+ACTIVE_USB_DEV = None
+GRANTED_USB_DEVS = set()
 
 def send_activity_log(action_msg):
     try:
@@ -99,23 +103,63 @@ def get_fastboot_bin():
             return "termux-fastboot"
     return "fastboot"
 
-def trigger_otg_popup(silent=False):
+def trigger_otg_popup(silent=False, force=False):
+    global ACTIVE_USB_DEV, GRANTED_USB_DEVS
     if platform.system().lower() != "windows" and shutil.which("termux-usb") is not None:
         try:
             res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=4)
             if res.stdout and res.stdout.strip():
                 usb_devs = json.loads(res.stdout.strip())
-                if isinstance(usb_devs, list) and len(usb_devs) > 0:
-                    for dev in usb_devs:
-                        if not silent:
-                            print(f"{CYAN}[OTG]{RESET} Requesting USB Permission for {dev} (Tap 'OK/Allow' on popup)...")
-                        subprocess.run(["termux-usb", "-r", dev], capture_output=True, text=True, timeout=6)
-                    # Allow Android USB service a brief moment to register permission grant
-                    time.sleep(1.2)
-                    return True
+                if isinstance(usb_devs, list):
+                    # Clean up disconnected USB ports from memory
+                    GRANTED_USB_DEVS.intersection_update(set(usb_devs))
+                    if len(usb_devs) > 0:
+                        ACTIVE_USB_DEV = usb_devs[-1]
+                        for dev in usb_devs:
+                            if dev in GRANTED_USB_DEVS and not force:
+                                continue
+                            if not silent:
+                                print(f"{CYAN}[OTG]{RESET} Requesting USB Permission for {dev} (Tap 'OK/Allow' on popup)...")
+                            req = subprocess.run(["termux-usb", "-r", dev], capture_output=True, text=True, timeout=12)
+                            req_out = ((req.stdout or "") + (req.stderr or "")).lower()
+                            if "granted" in req_out or "yes" in req_out or (req.returncode == 0 and "denied" not in req_out and "no" not in req_out):
+                                GRANTED_USB_DEVS.add(dev)
+                                ACTIVE_USB_DEV = dev
+                                if not silent:
+                                    print(f"{GREEN}[✓] OTG Permission Locked for {dev}!{RESET}")
+                        time.sleep(0.8)
+                        return True
+                    else:
+                        ACTIVE_USB_DEV = None
         except Exception:
             pass
     return False
+
+def run_usb_fastboot_probe(fb_bin, args_list, timeout_sec=5):
+    global ACTIVE_USB_DEV
+    # Method 1: Standard / termux-fastboot execution
+    try:
+        res = subprocess.run([fb_bin] + args_list, capture_output=True, text=True, timeout=timeout_sec)
+        comb = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()
+        if comb and "waiting for" not in comb.lower() and "no permissions" not in comb.lower():
+            return comb
+    except Exception:
+        pass
+
+    # Method 2: Direct termux-usb -e bridge for Infinix/MTK OTG ports
+    if ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
+        for candidate_bin in [fb_bin, "fastboot", "termux-fastboot"]:
+            if shutil.which(candidate_bin) is None:
+                continue
+            cmd_inner = f"{candidate_bin} {' '.join(args_list)}"
+            try:
+                res2 = subprocess.run(["termux-usb", "-e", cmd_inner, ACTIVE_USB_DEV], capture_output=True, text=True, timeout=timeout_sec)
+                comb2 = ((res2.stdout or "") + "\n" + (res2.stderr or "")).strip()
+                if comb2 and "waiting for" not in comb2.lower() and "no permissions" not in comb2.lower():
+                    return comb2
+            except Exception:
+                pass
+    return ""
 
 def check_fastboot():
     if shutil.which("fastboot") is None and shutil.which("termux-fastboot") is None:
@@ -131,48 +175,45 @@ def check_fastboot():
             print(f"{GREEN}[✓] Android platform-tools installed successfully!{RESET}")
 
 def get_device_info():
+    global ACTIVE_USB_DEV, GRANTED_USB_DEVS
     print(f"{CYAN}[INFO]{RESET} Fetching device details...")
     
     for attempt in range(5):
         fb_bin = get_fastboot_bin()
-        trigger_otg_popup()
+        trigger_otg_popup(force=(attempt > 0 and not GRANTED_USB_DEVS))
         
-        # Step 1: Check fastboot devices first (Fast & Reliable on both Redmi & Infinix/MTK)
-        try:
-            dev_check = subprocess.run([fb_bin, "devices"], capture_output=True, text=True, timeout=6)
-            dev_out = (dev_check.stdout or "").strip()
-            if dev_out and "permission" not in dev_out.lower():
-                serial_id = dev_out.split()[0].strip()
+        # Step 1: Check fastboot devices (via direct + termux-usb bridge)
+        dev_out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=5)
+        if dev_out and ("fastboot" in dev_out.lower() or len(dev_out.split()) >= 1):
+            first_line = dev_out.splitlines()[0].strip()
+            if first_line and "permission" not in first_line.lower():
+                serial_id = first_line.split()[0].strip()
                 product_name = serial_id
-                # Step 2: Optional non-blocking product name check (if MTK times out, serial_id is still returned!)
-                try:
-                    res_prod = subprocess.run([fb_bin, "getvar", "product"], capture_output=True, text=True, timeout=3)
-                    comb = (res_prod.stderr or "") + "\n" + (res_prod.stdout or "")
-                    if "product:" in comb:
-                        p_val = comb.split("product:")[1].split()[0].strip()
-                        if p_val:
-                            product_name = p_val
-                except Exception:
-                    pass
+                prod_out = run_usb_fastboot_probe(fb_bin, ["getvar", "product"], timeout_sec=3)
+                if "product:" in prod_out:
+                    p_val = prod_out.split("product:")[1].split()[0].strip()
+                    if p_val:
+                        product_name = p_val
                 print(f"{GREEN}[✓] Connected Device: {product_name}{RESET}")
                 return product_name
-        except subprocess.TimeoutExpired:
-            pass
-        except Exception:
-            pass
 
-        # Step 3: Direct getvar product check if 'fastboot devices' was empty
-        try:
-            result = subprocess.run([fb_bin, "getvar", "product"], capture_output=True, text=True, timeout=5)
-            combined_out = (result.stderr or "") + "\n" + (result.stdout or "")
-            if "product:" in combined_out:
-                product_name = combined_out.split("product:")[1].split()[0].strip()
-                print(f"{GREEN}[✓] Connected Device: {product_name}{RESET}")
-                return product_name
-        except subprocess.TimeoutExpired:
-            pass
-        except Exception:
-            pass
+        # Step 2: Check getvar product or getvar is-userspace (for Infinix FastbootD/Bootloader)
+        for var_name in ["product", "is-userspace", "serialno", "version"]:
+            var_out = run_usb_fastboot_probe(fb_bin, ["getvar", var_name], timeout_sec=4)
+            if f"{var_name}:" in var_out.lower() or "okay" in var_out.lower() or "finished" in var_out.lower():
+                if "product:" in var_out:
+                    p_val = var_out.split("product:")[1].split()[0].strip()
+                    if p_val:
+                        print(f"{GREEN}[✓] Connected Device: {p_val}{RESET}")
+                        return p_val
+                dev_label = f"Fastboot-Device ({ACTIVE_USB_DEV})" if ACTIVE_USB_DEV else "Fastboot-Device"
+                print(f"{GREEN}[✓] Connected Device: {dev_label}{RESET}")
+                return dev_label
+
+        # Step 3: Infinix / MTK Direct OTG Port Lock (If USB port is plugged in & Allow was tapped)
+        if ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS:
+            print(f"{GREEN}[✓] OTG Port Active & Authorized: {ACTIVE_USB_DEV} (Infinix/MTK Direct Mode){RESET}")
+            return f"OTG-{os.path.basename(ACTIVE_USB_DEV)}"
 
         print(f"{ORANGE}[!] Waiting for OTG Allow Popup... Please tap 'Allow/OK' on screen! ({attempt+1}/5){RESET}")
         print(f"{DIM}    (Tip: Make sure 'OTG Connection' is ON in Phone Settings & Termux:API app is installed){RESET}")
@@ -766,7 +807,7 @@ def cbr_smart_flasher():
                     break
                 else:
                     print(f"{RED}[!] Failed. OTG Retry ({attempt+1}/3)...{RESET}")
-                    trigger_otg_popup()
+                    trigger_otg_popup(force=True)
                     time.sleep(3)
                     
             if not success:
@@ -795,6 +836,7 @@ def cbr_smart_flasher():
 # 🚀 NEW: CBR INFINIX STOCK ROM FLASHER 🚀
 # ==========================================
 def cbr_infinix_flasher():
+    global ACTIVE_USB_DEV, GRANTED_USB_DEVS
     import requests
     import re
     # 🛡️ Anti-Disconnect: Wake-Lock Shield 🛡️
@@ -1094,22 +1136,25 @@ def cbr_infinix_flasher():
         nonlocal fb_bin
         print(f"\n{CYAN}[*] Waiting for phone to connect in {BOLD}{mode_label}{RESET}...")
         print(f"{ORANGE}[*] Keep watching phone screen! If OTG Popup appears, tap 'Allow / OK' immediately!{RESET}")
+        # Clear previous port permission memory on reboot so new USB descriptor triggers popup immediately
+        GRANTED_USB_DEVS.clear()
         time.sleep(3)
         
         for attempt in range(1, 61):
-            # Trigger USB permission popup on every cycle so new USB descriptor is caught immediately
             trigger_otg_popup(silent=(attempt % 3 != 1))
             fb_bin = get_fastboot_bin()
-            try:
-                res = subprocess.run([fb_bin, "devices"], capture_output=True, text=True, timeout=5)
-                dev_out = (res.stdout or "").strip()
-                if dev_out and "permission" not in dev_out.lower():
-                    dev_id = dev_out.split()[0]
-                    print(f"\n{GREEN}[✓] Device Caught & Reconnected in {mode_label} ({dev_id})!{RESET}")
-                    time.sleep(1.5)
-                    return True
-            except Exception:
-                pass
+            
+            dev_out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=4)
+            if dev_out and "permission" not in dev_out.lower():
+                dev_id = dev_out.split()[0]
+                print(f"\n{GREEN}[✓] Device Caught & Reconnected in {mode_label} ({dev_id})!{RESET}")
+                time.sleep(1.5)
+                return True
+
+            if ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS:
+                print(f"\n{GREEN}[✓] OTG USB Port Re-Authorized & Locked in {mode_label} ({ACTIVE_USB_DEV})!{RESET}")
+                time.sleep(1.5)
+                return True
                 
             sys.stdout.write(f"\r\033[K{ORANGE}>> [OTG CATCHER]{RESET} Scanning USB & Sending Allow Popup for {mode_label}... ({attempt}/60)")
             sys.stdout.flush()
@@ -1122,13 +1167,9 @@ def cbr_infinix_flasher():
         nonlocal fb_bin
         trigger_otg_popup(silent=True)
         fb_bin = get_fastboot_bin()
-        try:
-            res = subprocess.run([fb_bin, "getvar", "is-userspace"], capture_output=True, text=True, timeout=4)
-            comb = ((res.stderr or "") + "\n" + (res.stdout or "")).lower()
-            if "is-userspace: yes" in comb:
-                return True
-        except Exception:
-            pass
+        comb = run_usb_fastboot_probe(fb_bin, ["getvar", "is-userspace"], timeout_sec=4).lower()
+        if "is-userspace: yes" in comb:
+            return True
         return False
 
     def execute_single_fastboot_cmd(cmd_str, step_label, allow_skip=False, is_reboot_cmd=False):
@@ -1142,8 +1183,12 @@ def cbr_infinix_flasher():
                 run_cmd = fb_bin + run_cmd[8:]
                 
             print(f"\n{ORANGE}[{step_label} | RUNNING]{RESET} {run_cmd}")
+            
+            # Run command with anti-hang watchdog if standard binary stalls on MTK OTG
             process = subprocess.Popen(run_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
+            output_lines = []
             for out_line in process.stdout:
+                output_lines.append(out_line)
                 line_lower = out_line.lower()
                 if "error" in line_lower or "failed" in line_lower:
                     if "locked" in line_lower or "not allowed" in line_lower:
@@ -1152,10 +1197,21 @@ def cbr_infinix_flasher():
                         print(f"{ORANGE}   [DIAGNOSTIC] Partition/Variable not found on this model.{RESET}")
                     elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower or "no permissions" in line_lower:
                         print(f"{RED}   [DIAGNOSTIC] USB OTG Glitch/Permission Drop! Re-triggering Popup...{RESET}")
-                        trigger_otg_popup(silent=False)
+                        trigger_otg_popup(silent=False, force=True)
                 print(f"{DIM}   >> {out_line.strip()}{RESET}")
             process.wait()
             
+            # Fallback to direct termux-usb -e bridge if command failed and ACTIVE_USB_DEV is available
+            if process.returncode != 0 and ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
+                raw_fb_cmd = cmd_str
+                print(f"{CYAN}   [USB-BRIDGE]{RESET} Routing command directly via {ACTIVE_USB_DEV}...")
+                bridge_proc = subprocess.Popen(["termux-usb", "-e", raw_fb_cmd, ACTIVE_USB_DEV], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
+                for b_line in bridge_proc.stdout:
+                    print(f"{DIM}   >> {b_line.strip()}{RESET}")
+                bridge_proc.wait()
+                if bridge_proc.returncode == 0:
+                    process.returncode = 0
+
             if process.returncode == 0 or is_reboot_cmd:
                 success = True
                 break
