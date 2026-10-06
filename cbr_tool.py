@@ -1131,8 +1131,8 @@ def cbr_infinix_flasher():
 
     fb_bin = get_fastboot_bin()
 
-    # Calculate total steps for live percentage tracking & resume
-    total_flash_steps = 6 + (len(scatter_ab_map) * 2) + 1 + (len(scatter_vbmeta_map) * 2) + 1
+    # Calculate total steps for live percentage tracking & resume (including 6 new logical partition deletes)
+    total_flash_steps = 12 + (len(scatter_ab_map) * 2) + 1 + (len(scatter_vbmeta_map) * 2) + 1
     current_flash_step = 0
     user_aborted_flash = False
 
@@ -1242,7 +1242,7 @@ def cbr_infinix_flasher():
                     line_lower = out_line.lower()
                     print(f"{DIM}   >> {out_line.strip()}{RESET}")
 
-                    # 🛡️ FIX FOR SCREENSHOT 7821: Kill fastboot immediately if it hangs on '< waiting for any device >'
+                    # 🛡️ FIX FOR SCREENSHOT 7821 & 7861: Kill fastboot immediately if it hangs or drops USB device
                     if "waiting for any device" in line_lower or "< waiting for" in line_lower:
                         saw_waiting_for_device = True
                         try:
@@ -1252,6 +1252,9 @@ def cbr_infinix_flasher():
                         except Exception:
                             pass
                         break
+
+                    if "no such device" in line_lower or "status read failed" in line_lower or "cannot read" in line_lower:
+                        saw_waiting_for_device = True
 
                     if is_reboot_cmd and ("okay" in line_lower or "rebooting" in line_lower and "okay" in "".join(output_lines).lower()):
                         reboot_okay_seen = True
@@ -1267,7 +1270,7 @@ def cbr_infinix_flasher():
                             print(f"{RED}   [DIAGNOSTIC] Bootloader is Locked! Please unlock first.{RESET}")
                         elif "not found" in line_lower or "doesn't exist" in line_lower:
                             print(f"{ORANGE}   [DIAGNOSTIC] Partition/Variable not found on this model.{RESET}")
-                        elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower or "no permissions" in line_lower:
+                        elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower or "no permissions" in line_lower or "no such device" in line_lower:
                             print(f"{RED}   [DIAGNOSTIC] USB OTG Glitch/Permission Drop!{RESET}")
                             saw_waiting_for_device = True
 
@@ -1292,7 +1295,7 @@ def cbr_infinix_flasher():
                     for b_line in bridge_proc.stdout:
                         b_low = b_line.lower()
                         print(f"{DIM}   >> {b_line.strip()}{RESET}")
-                        if "waiting for any device" in b_low:
+                        if "waiting for any device" in b_low or "no such device" in b_low:
                             saw_waiting_for_device = True
                             try:
                                 bridge_proc.kill()
@@ -1315,7 +1318,7 @@ def cbr_infinix_flasher():
                         success = True
                         break
                     
-                    # If device disconnected mid-flash (e.g. at 30%), show [1] Try Connect / [2] Exit menu!
+                    # If device disconnected mid-flash (e.g. at 8% or 30%), show [1] Try Connect / [2] Exit menu!
                     if saw_waiting_for_device:
                         print(f"{RED}[!] Device disconnected at {pct_now}% during {step_label}! Opening Reconnect Menu...{RESET}")
                         if not wait_for_fastboot_device("Active Fastboot/FastbootD Mode"):
@@ -1366,7 +1369,17 @@ def cbr_infinix_flasher():
 
     execute_single_fastboot_cmd("fastboot delete-logical-partition product", "STEP 2-B", allow_skip=True)
     execute_single_fastboot_cmd("fastboot erase system", "STEP 2-C", allow_skip=True)
-    flash_partition_file("super", scatter_single_map.get("super", "super.img"), "STEP 2-D")
+
+    # 🚀 NEW: FREE UP LOGICAL PARTITIONS IN FASTBOOTD BEFORE FLASHING SUPER.IMG 🚀
+    execute_single_fastboot_cmd("fastboot delete-logical-partition system_ext", "STEP 2-C1", allow_skip=True)
+    execute_single_fastboot_cmd("fastboot delete-logical-partition system_ext_a", "STEP 2-C2", allow_skip=True)
+    execute_single_fastboot_cmd("fastboot delete-logical-partition system_ext_b", "STEP 2-C3", allow_skip=True)
+    execute_single_fastboot_cmd("fastboot delete-logical-partition product", "STEP 2-C4", allow_skip=True)
+    execute_single_fastboot_cmd("fastboot delete-logical-partition product_a", "STEP 2-C5", allow_skip=True)
+    execute_single_fastboot_cmd("fastboot delete-logical-partition product_b", "STEP 2-C6", allow_skip=True)
+
+    # Flash super.img in FastbootD mode with -S 64M safe OTG chunk slicing so 5GB+ file never disconnects
+    flash_partition_file("super", scatter_single_map.get("super", "super.img"), "STEP 2-D", extra_flags="-S 64M")
     execute_single_fastboot_cmd("fastboot -w", "STEP 2-E", allow_skip=True)
 
     if user_aborted_flash:
