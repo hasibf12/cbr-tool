@@ -32,7 +32,7 @@ DIM = "\033[2m"
 SECURE_PASSWORD_HASH = "ed30e4a879af03333d3ba7a782b941bb92ce5fba9d6c60be387c1688e2b5ea40"
 ADVANCE_PASSWORD_HASH = hashlib.sha256(bytes.fromhex("6362723031393736363334303435")).hexdigest()
 
-# 🛡️️ SUPER SECURE FIREBASE SECRET KEY 🛡️
+# 🛡 SUPER SECURE FIREBASE SECRET KEY 🛡️
 FIREBASE_SECRET = "W2u5TaOnnVWpdOwkCSsLDPuUzrXnSiC0o7ngf7zJ"
 SETTINGS_URL = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Settings.json?auth={FIREBASE_SECRET}"
 
@@ -1131,37 +1131,78 @@ def cbr_infinix_flasher():
 
     fb_bin = get_fastboot_bin()
 
-    # 🚀 NON-STOP OTG POPUP CATCHER & RECONNECT ENGINE 🚀
+    # Calculate total steps for live percentage tracking & resume
+    total_flash_steps = 6 + (len(scatter_ab_map) * 2) + 1 + (len(scatter_vbmeta_map) * 2) + 1
+    current_flash_step = 0
+    user_aborted_flash = False
+
+    def get_progress_pct():
+        pct = int((current_flash_step / max(1, total_flash_steps)) * 100)
+        return min(99, max(1, pct))
+
+    # 🚀 INTERACTIVE RECONNECT & RESUME MENU ([1] Try Connect / [2] Exit) 🚀
     def wait_for_fastboot_device(mode_label):
-        nonlocal fb_bin
-        print(f"\n{CYAN}[*] Waiting for phone to connect in {BOLD}{mode_label}{RESET}...")
-        print(f"{ORANGE}[*] Keep watching phone screen! If OTG Popup appears, tap 'Allow / OK' immediately!{RESET}")
-        # Clear previous port permission memory on reboot so new USB descriptor triggers popup immediately
+        nonlocal fb_bin, user_aborted_flash
+        pct_now = get_progress_pct()
         GRANTED_USB_DEVS.clear()
-        time.sleep(3)
         
-        for attempt in range(1, 61):
-            trigger_otg_popup(silent=(attempt % 3 != 1))
+        print(f"\n{CYAN}[*] Phone is switching/rebooting to {BOLD}{mode_label}{RESET} (Progress Saved: {BOLD}{GREEN}{pct_now}%{RESET})...")
+        print(f"{DIM}    Waiting 4 seconds for phone screen to enter {mode_label}...{RESET}")
+        time.sleep(4)
+
+        while True:
+            # Quick automatic scan + popup trigger first
+            trigger_otg_popup(silent=False, force=True)
             fb_bin = get_fastboot_bin()
-            
+
             dev_out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=4)
             if dev_out and "permission" not in dev_out.lower():
                 dev_id = dev_out.split()[0]
-                print(f"\n{GREEN}[✓] Device Caught & Reconnected in {mode_label} ({dev_id})!{RESET}")
-                time.sleep(1.5)
+                print(f"\n{GREEN}[✓] Device Connected in {mode_label} ({dev_id})! Resuming from {pct_now}%... 🚀{RESET}")
+                time.sleep(1)
                 return True
 
             if ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS:
-                print(f"\n{GREEN}[✓] OTG USB Port Re-Authorized & Locked in {mode_label} ({ACTIVE_USB_DEV})!{RESET}")
-                time.sleep(1.5)
+                print(f"\n{GREEN}[✓] OTG Port Authorized & Connected in {mode_label} ({ACTIVE_USB_DEV})! Resuming from {pct_now}%... 🚀{RESET}")
+                time.sleep(1)
                 return True
-                
-            sys.stdout.write(f"\r\033[K{ORANGE}>> [OTG CATCHER]{RESET} Scanning USB & Sending Allow Popup for {mode_label}... ({attempt}/60)")
-            sys.stdout.flush()
-            time.sleep(2)
+
+            # Show Interactive Reconnect Menu so it never hangs or loses progress!
+            print(f"\n{PURPLE}=================================================={RESET}")
+            print(f"{ORANGE}{BOLD} ⚠️  DEVICE DISCONNECTED / WAITING FOR {mode_label.upper()} ⚠️{RESET}")
+            print(f"{CYAN} 📊 Saved Progress : {BOLD}{GREEN}{pct_now}% Completed{RESET} (Will resume from next step)")
+            print(f"{PURPLE}=================================================={RESET}")
+            print(f"{GREEN} [1]{RESET} 🔄 Try Connect (Send OTG Allow Popup & Resume)")
+            print(f"{RED} [2]{RESET} ❌ Exit (Cancel Flashing)")
             
-        print(f"\n{ORANGE}[!] Reconnect wait finished, attempting to continue sequence...{RESET}")
-        return False
+            rec_choice = input(f"\n{BOLD}{ORANGE}👉 Select Option [1/2]: {RESET}").strip()
+            
+            if rec_choice == '2':
+                print(f"\n{RED}[!] Flashing cancelled by user at {pct_now}%. Returning to menu...{RESET}")
+                user_aborted_flash = True
+                return False
+            else:
+                print(f"\n{CYAN}[*] Re-scanning USB OTG & Sending Allow Popup... Watch phone screen!{RESET}")
+                GRANTED_USB_DEVS.clear()
+                for retry_i in range(1, 4):
+                    trigger_otg_popup(silent=False, force=True)
+                    fb_bin = get_fastboot_bin()
+                    
+                    dev_out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=4)
+                    if dev_out and "permission" not in dev_out.lower():
+                        dev_id = dev_out.split()[0]
+                        print(f"\n{GREEN}[✓] Connected Successfully ({dev_id})! Resuming flash from {pct_now}%... 🚀{RESET}")
+                        time.sleep(1)
+                        return True
+                        
+                    if ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS:
+                        print(f"\n{GREEN}[✓] OTG Port Authorized ({ACTIVE_USB_DEV})! Resuming flash from {pct_now}%... 🚀{RESET}")
+                        time.sleep(1)
+                        return True
+                        
+                    print(f"{ORANGE}   >> Checking connection ({retry_i}/3)... Tap 'Allow/OK' if popup appears!{RESET}")
+                    time.sleep(2)
+                print(f"{RED}[!] Still not connected. Check OTG cable / make sure phone is in {mode_label}.{RESET}")
 
     def is_device_in_fastbootd():
         nonlocal fb_bin
@@ -1173,65 +1214,132 @@ def cbr_infinix_flasher():
         return False
 
     def execute_single_fastboot_cmd(cmd_str, step_label, allow_skip=False, is_reboot_cmd=False):
-        nonlocal fb_bin
-        success = False
-        for attempt in range(3):
-            trigger_otg_popup(silent=True)
-            fb_bin = get_fastboot_bin()
-            run_cmd = cmd_str
-            if fb_bin != "fastboot" and run_cmd.startswith("fastboot "):
-                run_cmd = fb_bin + run_cmd[8:]
-                
-            print(f"\n{ORANGE}[{step_label} | RUNNING]{RESET} {run_cmd}")
-            
-            # Run command with anti-hang watchdog if standard binary stalls on MTK OTG
-            process = subprocess.Popen(run_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
-            output_lines = []
-            for out_line in process.stdout:
-                output_lines.append(out_line)
-                line_lower = out_line.lower()
-                if "error" in line_lower or "failed" in line_lower:
-                    if "locked" in line_lower or "not allowed" in line_lower:
-                        print(f"{RED}   [DIAGNOSTIC] Bootloader is Locked! Please unlock first.{RESET}")
-                    elif "not found" in line_lower or "doesn't exist" in line_lower:
-                        print(f"{ORANGE}   [DIAGNOSTIC] Partition/Variable not found on this model.{RESET}")
-                    elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower or "no permissions" in line_lower:
-                        print(f"{RED}   [DIAGNOSTIC] USB OTG Glitch/Permission Drop! Re-triggering Popup...{RESET}")
-                        trigger_otg_popup(silent=False, force=True)
-                print(f"{DIM}   >> {out_line.strip()}{RESET}")
-            process.wait()
-            
-            # Fallback to direct termux-usb -e bridge if command failed and ACTIVE_USB_DEV is available
-            if process.returncode != 0 and ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
-                raw_fb_cmd = cmd_str
-                print(f"{CYAN}   [USB-BRIDGE]{RESET} Routing command directly via {ACTIVE_USB_DEV}...")
-                bridge_proc = subprocess.Popen(["termux-usb", "-e", raw_fb_cmd, ACTIVE_USB_DEV], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
-                for b_line in bridge_proc.stdout:
-                    print(f"{DIM}   >> {b_line.strip()}{RESET}")
-                bridge_proc.wait()
-                if bridge_proc.returncode == 0:
-                    process.returncode = 0
+        nonlocal fb_bin, current_flash_step, user_aborted_flash
+        if user_aborted_flash:
+            return False
 
-            if process.returncode == 0 or is_reboot_cmd:
-                success = True
+        current_flash_step += 1
+        pct_now = get_progress_pct()
+        success = False
+
+        while not user_aborted_flash:
+            for attempt in range(3):
+                trigger_otg_popup(silent=True)
+                fb_bin = get_fastboot_bin()
+                run_cmd = cmd_str
+                if fb_bin != "fastboot" and run_cmd.startswith("fastboot "):
+                    run_cmd = fb_bin + run_cmd[8:]
+                    
+                print(f"\n{ORANGE}[{step_label} | {pct_now}% | RUNNING]{RESET} {run_cmd}")
+                
+                process = subprocess.Popen(run_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
+                output_lines = []
+                saw_waiting_for_device = False
+                reboot_okay_seen = False
+
+                for out_line in process.stdout:
+                    output_lines.append(out_line)
+                    line_lower = out_line.lower()
+                    print(f"{DIM}   >> {out_line.strip()}{RESET}")
+
+                    # 🛡️ FIX FOR SCREENSHOT 7821: Kill fastboot immediately if it hangs on '< waiting for any device >'
+                    if "waiting for any device" in line_lower or "< waiting for" in line_lower:
+                        saw_waiting_for_device = True
+                        try:
+                            process.terminate()
+                            time.sleep(0.3)
+                            process.kill()
+                        except Exception:
+                            pass
+                        break
+
+                    if is_reboot_cmd and ("okay" in line_lower or "rebooting" in line_lower and "okay" in "".join(output_lines).lower()):
+                        reboot_okay_seen = True
+                        # Give 0.5s then break so fastboot reboot fastboot doesn't enter '< waiting for any device >' hang
+                        try:
+                            process.terminate()
+                        except Exception:
+                            pass
+                        break
+
+                    if "error" in line_lower or "failed" in line_lower:
+                        if "locked" in line_lower or "not allowed" in line_lower:
+                            print(f"{RED}   [DIAGNOSTIC] Bootloader is Locked! Please unlock first.{RESET}")
+                        elif "not found" in line_lower or "doesn't exist" in line_lower:
+                            print(f"{ORANGE}   [DIAGNOSTIC] Partition/Variable not found on this model.{RESET}")
+                        elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower or "no permissions" in line_lower:
+                            print(f"{RED}   [DIAGNOSTIC] USB OTG Glitch/Permission Drop!{RESET}")
+                            saw_waiting_for_device = True
+
+                try:
+                    process.wait(timeout=3)
+                except Exception:
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+
+                # If it was a reboot command (e.g. fastboot reboot fastboot / bootloader), it's done!
+                if is_reboot_cmd and (reboot_okay_seen or saw_waiting_for_device or process.returncode == 0):
+                    success = True
+                    break
+
+                # Fallback to direct termux-usb -e bridge if command failed and ACTIVE_USB_DEV is available
+                if process.returncode != 0 and not saw_waiting_for_device and ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
+                    raw_fb_cmd = cmd_str
+                    print(f"{CYAN}   [USB-BRIDGE]{RESET} Routing command directly via {ACTIVE_USB_DEV}...")
+                    bridge_proc = subprocess.Popen(["termux-usb", "-e", raw_fb_cmd, ACTIVE_USB_DEV], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
+                    for b_line in bridge_proc.stdout:
+                        b_low = b_line.lower()
+                        print(f"{DIM}   >> {b_line.strip()}{RESET}")
+                        if "waiting for any device" in b_low:
+                            saw_waiting_for_device = True
+                            try:
+                                bridge_proc.kill()
+                            except Exception:
+                                pass
+                            break
+                    try:
+                        bridge_proc.wait(timeout=3)
+                    except Exception:
+                        pass
+                    if bridge_proc.returncode == 0 and not saw_waiting_for_device:
+                        process.returncode = 0
+
+                if (process.returncode == 0 and not saw_waiting_for_device) or is_reboot_cmd:
+                    success = True
+                    break
+                else:
+                    if allow_skip and attempt == 0 and not saw_waiting_for_device:
+                        print(f"{ORANGE}[!] Optional partition/action returned non-zero, moving to next step safely...{RESET}")
+                        success = True
+                        break
+                    
+                    # If device disconnected mid-flash (e.g. at 30%), show [1] Try Connect / [2] Exit menu!
+                    if saw_waiting_for_device:
+                        print(f"{RED}[!] Device disconnected at {pct_now}% during {step_label}! Opening Reconnect Menu...{RESET}")
+                        if not wait_for_fastboot_device("Active Fastboot/FastbootD Mode"):
+                            return False
+                        # Once reconnected via Option 1, retry this exact step immediately!
+                        continue
+                    
+                    print(f"{RED}[!] Command Failed ({attempt+1}/3). Checking OTG connection...{RESET}")
+                    time.sleep(2)
+
+            if success:
                 break
             else:
-                if allow_skip and attempt == 0:
-                    print(f"{ORANGE}[!] Optional partition/action returned non-zero, moving to next step safely...{RESET}")
-                    break
-                print(f"{RED}[!] Command Failed. Re-catching OTG & Auto-Retrying ({attempt+1}/3)...{RESET}")
-                wait_for_fastboot_device("Active Fastboot Session")
-                time.sleep(2)
+                # After 3 failed attempts on a required step, ask user via [1] Try Connect / [2] Exit
+                print(f"{RED}[!] Step {step_label} could not complete at {pct_now}%.{RESET}")
+                if not wait_for_fastboot_device("Fastboot / FastbootD Mode"):
+                    return False
                 
-        time.sleep(1.5)
-        if not is_reboot_cmd:
-            try:
-                subprocess.run(f"{fb_bin} devices > /dev/null 2>&1", shell=True, timeout=4)
-            except Exception:
-                pass
+        time.sleep(1.0)
         return success
 
     def flash_partition_file(part_name, img_filename, step_label, extra_flags=""):
+        if user_aborted_flash:
+            return
         img_path = os.path.join(rom_img_dir, img_filename)
         if not os.path.exists(img_path):
             print(f"\n{ORANGE}[SKIP]{RESET} {img_filename} not found in ROM folder, skipping {part_name}.")
@@ -1252,33 +1360,51 @@ def cbr_infinix_flasher():
     else:
         print(f"{CYAN}[*] Phone is in normal Fastboot mode. Switching to FastbootD Mode...{RESET}")
         execute_single_fastboot_cmd("fastboot reboot fastboot", "STEP 2-A", is_reboot_cmd=True)
-        wait_for_fastboot_device("FastbootD Mode")
+        if not wait_for_fastboot_device("FastbootD Mode") or user_aborted_flash:
+            os.system("termux-wake-unlock > /dev/null 2>&1")
+            return
 
     execute_single_fastboot_cmd("fastboot delete-logical-partition product", "STEP 2-B", allow_skip=True)
     execute_single_fastboot_cmd("fastboot erase system", "STEP 2-C", allow_skip=True)
     flash_partition_file("super", scatter_single_map.get("super", "super.img"), "STEP 2-D")
     execute_single_fastboot_cmd("fastboot -w", "STEP 2-E", allow_skip=True)
 
+    if user_aborted_flash:
+        os.system("termux-wake-unlock > /dev/null 2>&1")
+        return
+
     # --- BOOTLOADER MODE ---
     print(f"\n{CYAN}{BOLD}>>> STAGE 2: BOOTLOADER MODE FLASHING (SCATTER VERIFIED) <<<{RESET}")
     execute_single_fastboot_cmd("fastboot reboot bootloader", "BOOTLOADER-SWITCH", is_reboot_cmd=True)
-    wait_for_fastboot_device("Bootloader Mode")
+    if not wait_for_fastboot_device("Bootloader Mode") or user_aborted_flash:
+        os.system("termux-wake-unlock > /dev/null 2>&1")
+        return
 
     step_counter = 1
     for base_part, img_file in scatter_ab_map.items():
+        if user_aborted_flash:
+            break
         flash_partition_file(f"{base_part}_a", img_file, f"PART-{step_counter}A")
         flash_partition_file(f"{base_part}_b", img_file, f"PART-{step_counter}B")
         step_counter += 1
 
     # Flash userdata at end of Stage 2
-    flash_partition_file("userdata", scatter_single_map.get("userdata", "userdata.img"), "STEP-USERDATA")
+    if not user_aborted_flash:
+        flash_partition_file("userdata", scatter_single_map.get("userdata", "userdata.img"), "STEP-USERDATA")
 
     # --- VBMETA VERITY DISABLE ---
-    print(f"\n{CYAN}{BOLD}>>> STAGE 3: VBMETA VERITY & VERIFICATION DISABLE <<<{RESET}")
-    vbmeta_flags = "--disable-verity --disable-verification"
-    for vb_base, vb_file in scatter_vbmeta_map.items():
-        flash_partition_file(f"{vb_base}_a", vb_file, f"{vb_base.upper()}-A", extra_flags=vbmeta_flags)
-        flash_partition_file(f"{vb_base}_b", vb_file, f"{vb_base.upper()}-B", extra_flags=vbmeta_flags)
+    if not user_aborted_flash:
+        print(f"\n{CYAN}{BOLD}>>> STAGE 3: VBMETA VERITY & VERIFICATION DISABLE <<<{RESET}")
+        vbmeta_flags = "--disable-verity --disable-verification"
+        for vb_base, vb_file in scatter_vbmeta_map.items():
+            if user_aborted_flash:
+                break
+            flash_partition_file(f"{vb_base}_a", vb_file, f"{vb_base.upper()}-A", extra_flags=vbmeta_flags)
+            flash_partition_file(f"{vb_base}_b", vb_file, f"{vb_base.upper()}-B", extra_flags=vbmeta_flags)
+
+    if user_aborted_flash:
+        os.system("termux-wake-unlock > /dev/null 2>&1")
+        return
 
     # --- REBOOT TO RECOVERY (FACTORY RESET) ---
     print(f"\n{CYAN}{BOLD}>>> STAGE 4: REBOOTING TO RECOVERY (FACTORY RESET) <<<{RESET}")
