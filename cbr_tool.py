@@ -41,6 +41,16 @@ SESSION_FILE = os.path.expanduser("~/.cbr_session.json")
 ACTIVE_USB_DEV = None
 GRANTED_USB_DEVS = set()
 
+def get_cloud_setting(key, default_val):
+    """Smart Cloud Fetcher with Timeout to prevent fallback bugs"""
+    try:
+        res = requests.get(SETTINGS_URL, timeout=8).json()
+        if isinstance(res, dict) and key in res:
+            return res[key]
+    except:
+        pass
+    return default_val
+
 def send_activity_log(action_msg):
     try:
         import requests
@@ -240,7 +250,7 @@ def get_brom_device_info():
                 usb_devs = json.loads(res.stdout.strip())
                 if isinstance(usb_devs, list) and len(usb_devs) > 0:
                     ACTIVE_USB_DEV = usb_devs[-1]
-                    print(f"{GREEN}[✓] Device Detected in BROM Mode ({ACTIVE_USB_DEV})!{RESET}")
+                    print(f"\n{GREEN}[✓] Device Detected in BROM Mode ({ACTIVE_USB_DEV})!{RESET}")
                     req = subprocess.run(["termux-usb", "-r", ACTIVE_USB_DEV], capture_output=True, text=True, timeout=6)
                     req_out = ((req.stdout or "") + (req.stderr or "")).lower()
                     if "granted" in req_out or "yes" in req_out or req.returncode == 0:
@@ -256,11 +266,13 @@ def get_brom_device_info():
 def authenticate():
     premium_header()
     print(f"{ORANGE}[SECURITY]{RESET} Protected under CBR verification protocols.")
+    live_tool_pass = get_cloud_setting('tool_password', None)
+    
     try:
         user_pass = input(f"{BOLD}🔑 Enter Security Token Password: {RESET}").strip()
         hashed_input = hashlib.sha256(user_pass.encode()).hexdigest()
         
-        if hashed_input == SECURE_PASSWORD_HASH:
+        if (live_tool_pass and user_pass == live_tool_pass) or hashed_input == SECURE_PASSWORD_HASH:
             print(f"\n{GREEN}[✓] Access Granted! Authenticating cryptographic pipeline...{RESET}")
             time.sleep(1)
             return True
@@ -270,6 +282,16 @@ def authenticate():
     except Exception as e:
         print(f"\n{RED}[!] Auth Error: {str(e)}{RESET}")
         return False
+
+def verify_admin_access():
+    live_admin_pass = get_cloud_setting('admin_password', None)
+    admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Admin/Owner Password: {RESET}").strip()
+    
+    if (live_admin_pass and admin_pass == live_admin_pass) or hashlib.sha256(admin_pass.encode()).hexdigest() == ADVANCE_PASSWORD_HASH:
+        return True
+    print(f"\n{RED}[✗] Access Denied: Unauthorized Attempt! Intruders will be tracked.{RESET}")
+    time.sleep(2)
+    return False
 
 def ping_server_and_check_ban(hwid):
     import requests
@@ -291,7 +313,6 @@ def start_online_ping(hwid):
 
 def check_firebase_approval():
     import requests
-    
     raw_id = platform.node() + str(uuid.getnode())
     hwid = hashlib.md5(raw_id.encode()).hexdigest()[:15].upper()
     
@@ -330,7 +351,7 @@ def check_firebase_approval():
     print(f"{CYAN}[DEVICE]{RESET} {device_name}")
     
     try:
-        response = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}")
+        response = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}", timeout=10)
         all_users = response.json()
         
         if isinstance(all_users, dict) and "error" in all_users:
@@ -396,7 +417,7 @@ def check_firebase_approval():
         db_url = f"{base_url}/{existing_hwid}.json?auth={FIREBASE_SECRET}"
         
         while True:
-            resp = requests.get(db_url)
+            resp = requests.get(db_url, timeout=10)
             data = resp.json()
             if not data:
                 time.sleep(3)
@@ -502,12 +523,7 @@ def advance_abdullah_hasib_tool():
     print(f"{HACKER_GREEN}{BOLD}    ⚡ ADVANCE ONLY CBR OWNER ABDULLAH AL HASIB ⚡    {RESET}")
     print(f"{PURPLE}=================================================={RESET}\n")
     
-    adv_pass = input(f"{BOLD}{ORANGE}🔑 Enter Master Password for Advance Tool: {RESET}").strip()
-    if hashlib.sha256(adv_pass.encode()).hexdigest() != ADVANCE_PASSWORD_HASH:
-        print(f"\n{RED}[✗] Access Denied: Unauthorized Attempt!{RESET}")
-        send_activity_log("Failed Attempt: Wrong Advance Password")
-        time.sleep(2)
-        return
+    if not verify_admin_access(): return
         
     print(f"\n{GREEN}[✓] Access Granted to CBR Owner Abdullah Al Hasib!{RESET}")
     send_activity_log("Successfully Logged into Advance Owner Menu")
@@ -609,11 +625,7 @@ def cbr_smart_flasher():
     print(f"{PURPLE}=================================================={RESET}\n")
     
     print(f"{CYAN}[SECURITY]{RESET} Connecting to Cloud Authorization...")
-    try:
-        res = requests.get(SETTINGS_URL).json()
-        live_password = res.get('flash_password', 'Powerbycbr') if isinstance(res, dict) else 'Powerbycbr'
-    except:
-        live_password = "Powerbycbr" 
+    live_password = get_cloud_setting('flash_password', 'Powerbycbr')
         
     auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter Flash Authorization Password: {RESET}").strip()
     if auth_pass != live_password:
@@ -869,11 +881,7 @@ def cbr_infinix_flasher():
     print(f"{PURPLE}=================================================={RESET}\n")
     
     print(f"{CYAN}[SECURITY]{RESET} Connecting to Cloud Authorization...")
-    try:
-        res = requests.get(SETTINGS_URL).json()
-        live_password = res.get('infinix_password', 'cbr') if isinstance(res, dict) else 'cbr'
-    except:
-        live_password = "cbr"
+    live_password = get_cloud_setting('infinix_password', 'cbr')
         
     auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter Infinix Flash Authorization Password: {RESET}").strip()
     if auth_pass != live_password and auth_pass != f":{live_password}":
@@ -1290,11 +1298,7 @@ def cbr_infinix_flasher():
 # ==========================================
 def verify_brom_auth():
     print(f"{CYAN}[SECURITY]{RESET} Connecting to Cloud Authorization for BROM Engine...")
-    try:
-        res = requests.get(SETTINGS_URL).json()
-        live_password = res.get('brom_password', 'bromadmin') if isinstance(res, dict) else 'bromadmin'
-    except:
-        live_password = "bromadmin"
+    live_password = get_cloud_setting('brom_password', 'bromadmin')
         
     auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter BROM Access Password: {RESET}").strip()
     if auth_pass != live_password:
@@ -1382,11 +1386,7 @@ def admin_panel():
     print(f"{RED}{BOLD}        🔐 ADMIN CONTROL DASHBOARD 🔐        {RESET}")
     print(f"{PURPLE}=================================================={RESET}\n")
     
-    admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Owner Password: {RESET}").strip()
-    if hashlib.sha256(admin_pass.encode()).hexdigest() != ADVANCE_PASSWORD_HASH:
-        print(f"\n{RED}[✗] Access Denied: Intruders Will Be Banned!{RESET}")
-        time.sleep(2)
-        return
+    if not verify_admin_access(): return
 
     import requests
     base_url = "https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users"
@@ -1395,32 +1395,40 @@ def admin_panel():
         os.system('cls' if os.name == 'nt' else 'clear')
         print(f"{CYAN}--- ADMIN PANEL ---{RESET}")
         print(f"{GREEN} [1]{RESET} Manage Users (Logs/Ban/Clear)")
-        print(f"{ORANGE} [5]{RESET} 🔑 Change Redmi Flash Password")
-        print(f"{ORANGE} [6]{RESET} 🔑 Change Infinix Flash Password")
-        print(f"{ORANGE} [7]{RESET} 🔑 Change BROM Master Password")
+        print(f"{ORANGE} [4]{RESET} 🔑 Change Tool Opening Password (Cloud)")
+        print(f"{ORANGE} [5]{RESET} 🔑 Change Redmi Flash Password (Cloud)")
+        print(f"{ORANGE} [6]{RESET} 🔑 Change Infinix Flash Password (Cloud)")
+        print(f"{ORANGE} [7]{RESET} 🔑 Change BROM Access Password (Cloud)")
+        print(f"{RED} [8]{RESET} 🔑 Change Admin/Owner Password (Cloud)")
         print(f"{RED} [0]{RESET} Back to Main Menu")
         
         admin_opt = input(f"\n{BOLD}{ORANGE}👉 Select Action: {RESET}").strip()
         
         if admin_opt == '0': break
-        elif admin_opt in ['5', '6', '7']:
-            key_map = {'5': 'flash_password', '6': 'infinix_password', '7': 'brom_password'}
-            key_name = key_map[admin_opt]
-            try:
-                curr_pass = requests.get(SETTINGS_URL).json().get(key_name, 'default')
-                print(f"\n{DIM}Current {key_name}: {curr_pass}{RESET}")
-            except: pass
-            new_pass = input(f"{BOLD}{ORANGE}👉 Enter New Password: {RESET}").strip()
+        elif admin_opt in ['4', '5', '6', '7', '8']:
+            key_map = {
+                '4': ('tool_password', 'Tool Opening Password'),
+                '5': ('flash_password', 'Redmi Flash Password'),
+                '6': ('infinix_password', 'Infinix Flash Password'),
+                '7': ('brom_password', 'BROM Access Password'),
+                '8': ('admin_password', 'Admin/Owner Password')
+            }
+            key_name, display_name = key_map[admin_opt]
+            curr_pass = get_cloud_setting(key_name, 'Not Set (Using Default/Hash)')
+            print(f"\n{DIM}Current {display_name}: {curr_pass}{RESET}")
+            
+            new_pass = input(f"{BOLD}{ORANGE}👉 Enter New Password (or press enter to cancel): {RESET}").strip()
             if new_pass:
                 try:
-                    requests.patch(SETTINGS_URL, json={key_name: new_pass})
-                    print(f"{GREEN}[✓] Password Updated to Cloud!{RESET}")
-                except Exception as e: print(f"{RED}[!] Error: {e}{RESET}")
+                    requests.patch(SETTINGS_URL, json={key_name: new_pass}, timeout=10)
+                    print(f"{GREEN}[✓] {display_name} Successfully Updated to Cloud!{RESET}")
+                except Exception as e: 
+                    print(f"{RED}[!] Error: {e}{RESET}")
             input(f"\n{PURPLE}Press Enter...{RESET}")
             
         elif admin_opt == '1':
             try:
-                users_data = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}").json()
+                users_data = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}", timeout=10).json()
                 if not users_data or "error" in users_data: continue
                 email_list = []
                 print(f"\n{CYAN}--- REGISTERED USERS ---{RESET}")
@@ -1485,6 +1493,9 @@ def run_tool():
     try:
         check_dependencies()
         setup_otg_drivers()
+        if not authenticate():
+            input(f"\n{RED}Press Enter to exit...{RESET}")
+            sys.exit(1)
         if not check_firebase_approval():
             input(f"\n{RED}Press Enter to exit...{RESET}")
             sys.exit(1)
