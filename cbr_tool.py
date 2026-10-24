@@ -44,6 +44,7 @@ GRANTED_USB_DEVS = set()
 def get_cloud_setting(key, default_val):
     """Smart Cloud Fetcher with Timeout to prevent fallback bugs"""
     try:
+        import requests
         res = requests.get(SETTINGS_URL, timeout=8).json()
         if isinstance(res, dict) and key in res:
             return res[key]
@@ -1298,7 +1299,7 @@ def cbr_infinix_flasher():
 # ==========================================
 def verify_brom_auth():
     print(f"{CYAN}[SECURITY]{RESET} Connecting to Cloud Authorization for BROM Engine...")
-    live_password = get_cloud_setting('brom_password', 'bromadmin')
+    live_password = get_cloud_setting('brom_password', 'OwnerHasib')
         
     auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter BROM Access Password: {RESET}").strip()
     if auth_pass != live_password:
