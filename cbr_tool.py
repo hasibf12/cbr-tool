@@ -243,25 +243,40 @@ def get_brom_device_info():
     global ACTIVE_USB_DEV, GRANTED_USB_DEVS
     print(f"{CYAN}[BROM-SCAN]{RESET} Waiting for MTK BROM Connection...")
     print(f"{ORANGE}[*] Please turn OFF phone. Hold VOLUME UP + DOWN and connect OTG cable!{RESET}")
+    print(f"{DIM}    (Scanning will run for 60 seconds. You have plenty of time!){RESET}")
     
-    for attempt in range(15):
+    # 10000% Power Fix: Continuous fast polling for 60 seconds
+    end_time = time.time() + 60
+    while time.time() < end_time:
         if platform.system().lower() != "windows" and shutil.which("termux-usb") is not None:
-            res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=4)
-            if res.stdout and res.stdout.strip():
-                usb_devs = json.loads(res.stdout.strip())
-                if isinstance(usb_devs, list) and len(usb_devs) > 0:
-                    ACTIVE_USB_DEV = usb_devs[-1]
-                    print(f"\n{GREEN}[✓] Device Detected in BROM Mode ({ACTIVE_USB_DEV})!{RESET}")
-                    req = subprocess.run(["termux-usb", "-r", ACTIVE_USB_DEV], capture_output=True, text=True, timeout=6)
-                    req_out = ((req.stdout or "") + (req.stderr or "")).lower()
-                    if "granted" in req_out or "yes" in req_out or req.returncode == 0:
-                        GRANTED_USB_DEVS.add(ACTIVE_USB_DEV)
-                        print(f"{GREEN}[✓] BROM Auth Bypassed & Port Locked!{RESET}")
-                        return True
-        sys.stdout.write(f"\r\033[K{ORANGE}>> Scanning for BROM Port... ({attempt+1}/15){RESET}")
+            try:
+                # 0.5s timeout prevents hanging like before
+                res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=0.5)
+                if res.stdout and res.stdout.strip():
+                    usb_devs = json.loads(res.stdout.strip())
+                    if isinstance(usb_devs, list) and len(usb_devs) > 0:
+                        ACTIVE_USB_DEV = usb_devs[-1]
+                        print(f"\n{GREEN}[✓] Device Detected in BROM Mode ({ACTIVE_USB_DEV})!{RESET}")
+                        
+                        # Request permission safely
+                        req = subprocess.run(["termux-usb", "-r", ACTIVE_USB_DEV], capture_output=True, text=True, timeout=4)
+                        req_out = ((req.stdout or "") + (req.stderr or "")).lower()
+                        if "granted" in req_out or "yes" in req_out or req.returncode == 0:
+                            GRANTED_USB_DEVS.add(ACTIVE_USB_DEV)
+                            print(f"{GREEN}[✓] BROM Auth Bypassed & Port Locked!{RESET}")
+                            return True
+            except subprocess.TimeoutExpired:
+                # Silently ignore timeout and keep scanning (No more CRITICAL ERROR)
+                pass
+            except Exception:
+                pass
+                
+        rem_time = int(end_time - time.time())
+        sys.stdout.write(f"\r\033[K{ORANGE}>> Fast Scanning for BROM Port... ({rem_time}s remaining){RESET}")
         sys.stdout.flush()
-        time.sleep(1.5)
-    print(f"\n{RED}[!] Failed to catch BROM port. Try again.{RESET}")
+        time.sleep(0.2)  # Tiny delay for aggressive scanning
+        
+    print(f"\n{RED}[!] Failed to catch BROM port within 60 seconds. Try again.{RESET}")
     return False
 
 def authenticate():
