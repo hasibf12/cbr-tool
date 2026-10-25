@@ -13,8 +13,11 @@ import zipfile
 import glob
 import json
 
+# 💻 DUAL-CORE ARCHITECTURE DETECTOR 📱
+IS_WINDOWS = (platform.system().lower() == "windows")
+
 # উইন্ডোজ পিসির কনসোলকে ফোর্সফুলি UTF-8 এবং ANSI কালার মোডে নেওয়া
-if sys.platform == "win32":
+if IS_WINDOWS:
     os.system('chcp 65001 > nul')
     os.system('color')
 
@@ -75,11 +78,15 @@ def premium_header():
     print(r" ╚██████╗██████╔╝██║  ██║")
     print(r"  ╚═════╝╚═════╝ ╚═╝  ╚═╝")
     print(f"      ⚡ CBR TOOL ⚡     {RESET}")
+    if IS_WINDOWS:
+        print(f" {HACKER_GREEN}{BOLD}[ACTIVE MODE: WINDOWS SUPER-PC]{RESET}")
+    else:
+        print(f" {HACKER_GREEN}{BOLD}[ACTIVE MODE: TERMUX MOBILE]{RESET}")
     print(f"{ORANGE}{BOLD} © Copyright: Abdullah Al Hasib {RESET}")
     print(f"{DIM}{'━' * 35}{RESET}\n")
 
 def create_cbrtool_shortcut():
-    if platform.system().lower() != "windows":
+    if not IS_WINDOWS:
         bin_dir = "/data/data/com.termux/files/usr/bin"
         shortcut_path = os.path.join(bin_dir, "cbrtool")
         script_path = os.path.abspath(__file__)
@@ -93,7 +100,7 @@ def create_cbrtool_shortcut():
 
 def check_dependencies():
     create_cbrtool_shortcut()
-    if platform.system().lower() != "windows":
+    if not IS_WINDOWS:
         try:
             import ssl
         except ImportError:
@@ -109,8 +116,12 @@ def check_dependencies():
         subprocess.check_call([sys.executable, "-m", "pip", "install", "colorama", "pycryptodomex", "miunlock", "requests", "--quiet"])
 
 def setup_otg_drivers():
-    if platform.system().lower() != "windows":
+    if not IS_WINDOWS:
         try:
+            # Ninja Scanner lsusb support
+            if shutil.which("lsusb") is None:
+                os.system("pkg install usbutils -y > /dev/null 2>&1")
+                
             if not os.path.exists("/data/data/com.termux/files/usr/bin/termux-usb"):
                 print(f"{ORANGE}[*] Installing Advanced OTG Drivers (libusb, termux-api)...{RESET}")
                 os.system("pkg install termux-api libusb -y > /dev/null 2>&1")
@@ -121,14 +132,16 @@ def setup_otg_drivers():
             pass
 
 def get_fastboot_bin():
-    if platform.system().lower() != "windows":
+    if not IS_WINDOWS:
         if shutil.which("termux-fastboot") is not None:
             return "termux-fastboot"
     return "fastboot"
 
 def trigger_otg_popup(silent=False, force=False):
     global ACTIVE_USB_DEV, GRANTED_USB_DEVS
-    if platform.system().lower() != "windows" and shutil.which("termux-usb") is not None:
+    if IS_WINDOWS: return False
+    
+    if shutil.which("termux-usb") is not None:
         try:
             res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=4)
             if res.stdout and res.stdout.strip():
@@ -167,7 +180,7 @@ def run_usb_fastboot_probe(fb_bin, args_list, timeout_sec=5):
     except Exception:
         pass
 
-    if ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
+    if not IS_WINDOWS and ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
         for candidate_bin in [fb_bin, "fastboot", "termux-fastboot"]:
             if shutil.which(candidate_bin) is None:
                 continue
@@ -184,15 +197,19 @@ def run_usb_fastboot_probe(fb_bin, args_list, timeout_sec=5):
 def check_fastboot():
     if shutil.which("fastboot") is None and shutil.which("termux-fastboot") is None:
         print(f"{RED}[!] Fastboot is not installed or not in PATH!{RESET}")
-        print(f"{ORANGE}[*] Auto-installing Android platform-tools (Fastboot/ADB)... Please wait.{RESET}")
-        os.system("pkg update -y > /dev/null 2>&1")
-        os.system("pkg install android-tools -y")
-        time.sleep(2)
-        if shutil.which("fastboot") is None and shutil.which("termux-fastboot") is None:
-            print(f"{RED}[!] Auto-install failed! Please install manually: pkg install android-tools{RESET}")
-            sys.exit(1)
+        if not IS_WINDOWS:
+            print(f"{ORANGE}[*] Auto-installing Android platform-tools (Fastboot/ADB)... Please wait.{RESET}")
+            os.system("pkg update -y > /dev/null 2>&1")
+            os.system("pkg install android-tools -y")
+            time.sleep(2)
+            if shutil.which("fastboot") is None and shutil.which("termux-fastboot") is None:
+                print(f"{RED}[!] Auto-install failed! Please install manually: pkg install android-tools{RESET}")
+                sys.exit(1)
+            else:
+                print(f"{GREEN}[✓] Android platform-tools installed successfully!{RESET}")
         else:
-            print(f"{GREEN}[✓] Android platform-tools installed successfully!{RESET}")
+            print(f"{RED}[!] On Windows, please install minimal ADB & Fastboot manually.{RESET}")
+            sys.exit(1)
 
 def get_device_info():
     global ACTIVE_USB_DEV, GRANTED_USB_DEVS
@@ -228,53 +245,80 @@ def get_device_info():
                 print(f"{GREEN}[✓] Connected Device: {dev_label}{RESET}")
                 return dev_label
 
-        if ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS:
+        if not IS_WINDOWS and ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS:
             print(f"{GREEN}[✓] OTG Port Active & Authorized: {ACTIVE_USB_DEV} (Infinix/MTK Direct Mode){RESET}")
             return f"OTG-{os.path.basename(ACTIVE_USB_DEV)}"
 
-        print(f"{ORANGE}[!] Waiting for OTG Allow Popup... Please tap 'Allow/OK' on screen! ({attempt+1}/5){RESET}")
-        print(f"{DIM}    (Tip: Make sure 'OTG Connection' is ON in Phone Settings & Termux:API app is installed){RESET}")
+        if IS_WINDOWS:
+            print(f"{ORANGE}[!] Waiting for Device Connection... ({attempt+1}/5){RESET}")
+        else:
+            print(f"{ORANGE}[!] Waiting for OTG Allow Popup... Please tap 'Allow/OK' on screen! ({attempt+1}/5){RESET}")
+            print(f"{DIM}    (Tip: Make sure 'OTG Connection' is ON in Phone Settings & Termux:API app is installed){RESET}")
         time.sleep(2)
             
-    print(f"{ORANGE}[!] Could not read device product name. Check OTG cable & Fastboot mode.{RESET}")
+    print(f"{ORANGE}[!] Could not read device product name. Check USB cable & Fastboot mode.{RESET}")
     return None
 
 def get_brom_device_info():
     global ACTIVE_USB_DEV, GRANTED_USB_DEVS
     print(f"{CYAN}[BROM-SCAN]{RESET} Waiting for MTK BROM Connection...")
-    print(f"{ORANGE}[*] Please turn OFF phone. Hold VOLUME UP + DOWN and connect OTG cable!{RESET}")
-    print(f"{DIM}    (Scanning will run for 60 seconds. You have plenty of time!){RESET}")
+    print(f"{ORANGE}[*] Please turn OFF phone. Hold VOLUME UP + DOWN and connect USB cable!{RESET}")
+    print(f"{DIM}    (Infinite Ninja Scanner active for 60 seconds. You have plenty of time!){RESET}")
     
-    # 10000% Power Fix: Continuous fast polling for 60 seconds
     end_time = time.time() + 60
-    while time.time() < end_time:
-        if platform.system().lower() != "windows" and shutil.which("termux-usb") is not None:
+    
+    if IS_WINDOWS:
+        # --- 🚀 PC WMI BROM SCANNER ---
+        while time.time() < end_time:
             try:
-                # 0.5s timeout prevents hanging like before
-                res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=0.5)
-                if res.stdout and res.stdout.strip():
-                    usb_devs = json.loads(res.stdout.strip())
-                    if isinstance(usb_devs, list) and len(usb_devs) > 0:
-                        ACTIVE_USB_DEV = usb_devs[-1]
-                        print(f"\n{GREEN}[✓] Device Detected in BROM Mode ({ACTIVE_USB_DEV})!{RESET}")
-                        
-                        # Request permission safely
-                        req = subprocess.run(["termux-usb", "-r", ACTIVE_USB_DEV], capture_output=True, text=True, timeout=4)
-                        req_out = ((req.stdout or "") + (req.stderr or "")).lower()
-                        if "granted" in req_out or "yes" in req_out or req.returncode == 0:
-                            GRANTED_USB_DEVS.add(ACTIVE_USB_DEV)
-                            print(f"{GREEN}[✓] BROM Auth Bypassed & Port Locked!{RESET}")
-                            return True
-            except subprocess.TimeoutExpired:
-                # Silently ignore timeout and keep scanning (No more CRITICAL ERROR)
-                pass
+                res = subprocess.run("wmic path Win32_PnPEntity get Caption,DeviceID", shell=True, capture_output=True, text=True, creationflags=0x08000000 if sys.platform == "win32" else 0)
+                if "VID_0E8D" in res.stdout.upper() or "MediaTek" in res.stdout:
+                    print(f"\n{GREEN}[✓] MediaTek BROM Port Detected (PC/COM)!{RESET}")
+                    print(f"{GREEN}[✓] PC Native BROM Auth Bypassed & Locked!{RESET}")
+                    return True
             except Exception:
                 pass
+            rem_time = int(end_time - time.time())
+            sys.stdout.write(f"\r\033[K{ORANGE}>> Windows Fast Polling for BROM Port... ({rem_time}s remaining){RESET}")
+            sys.stdout.flush()
+            time.sleep(0.1)
+    else:
+        # --- 🚀 TERMUX LSUSB & TERMUX-USB NINJA SCANNER ---
+        while time.time() < end_time:
+            if shutil.which("termux-usb") is not None:
+                # 1. lsusb Ninja Check (Kernel Level Raw Access)
+                if shutil.which("lsusb") is not None:
+                    try:
+                        lsusb_out = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=0.5).stdout.lower()
+                        if "0e8d" in lsusb_out or "mediatek" in lsusb_out:
+                            pass # BROM found physically, now force termux-usb
+                    except Exception:
+                        pass
                 
-        rem_time = int(end_time - time.time())
-        sys.stdout.write(f"\r\033[K{ORANGE}>> Fast Scanning for BROM Port... ({rem_time}s remaining){RESET}")
-        sys.stdout.flush()
-        time.sleep(0.2)  # Tiny delay for aggressive scanning
+                # 2. Termux-USB Fast Check (Zero Crash)
+                try:
+                    res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=0.5)
+                    if res.stdout and res.stdout.strip():
+                        usb_devs = json.loads(res.stdout.strip())
+                        if isinstance(usb_devs, list) and len(usb_devs) > 0:
+                            ACTIVE_USB_DEV = usb_devs[-1]
+                            print(f"\n{GREEN}[✓] Device Detected in BROM Mode ({ACTIVE_USB_DEV})!{RESET}")
+                            
+                            req = subprocess.run(["termux-usb", "-r", ACTIVE_USB_DEV], capture_output=True, text=True, timeout=3)
+                            req_out = ((req.stdout or "") + (req.stderr or "")).lower()
+                            if "granted" in req_out or "yes" in req_out or req.returncode == 0:
+                                GRANTED_USB_DEVS.add(ACTIVE_USB_DEV)
+                                print(f"{GREEN}[✓] BROM Auth Bypassed & Port Locked!{RESET}")
+                                return True
+                except subprocess.TimeoutExpired:
+                    pass
+                except Exception:
+                    pass
+                    
+            rem_time = int(end_time - time.time())
+            sys.stdout.write(f"\r\033[K{ORANGE}>> Ninja Polling for BROM Port... ({rem_time}s remaining){RESET}")
+            sys.stdout.flush()
+            time.sleep(0.1)
         
     print(f"\n{RED}[!] Failed to catch BROM port within 60 seconds. Try again.{RESET}")
     return False
@@ -344,7 +388,7 @@ def check_firebase_approval():
     base_url = "https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users"
 
     # Auto-Login Check
-    if os.path.exists(SESSION_FILE):
+    if not IS_WINDOWS and os.path.exists(SESSION_FILE):
         try:
             with open(SESSION_FILE, 'r') as f:
                 session_data = json.load(f)
@@ -407,8 +451,9 @@ def check_firebase_approval():
                 else:
                     requests.patch(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json={"device_name": device_name, "last_ping": int(time.time())})
                     
-                with open(SESSION_FILE, "w") as f:
-                    json.dump({"hwid": hwid, "email": user_email}, f)
+                if not IS_WINDOWS:
+                    with open(SESSION_FILE, "w") as f:
+                        json.dump({"hwid": hwid, "email": user_email}, f)
                     
                 start_online_ping(hwid)
                 send_activity_log("User Logged In Successfully")
@@ -454,8 +499,9 @@ def check_firebase_approval():
                 else:
                     requests.patch(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json={"device_name": device_name})
                     
-                with open(SESSION_FILE, "w") as f:
-                    json.dump({"hwid": hwid, "email": user_email}, f)
+                if not IS_WINDOWS:
+                    with open(SESSION_FILE, "w") as f:
+                        json.dump({"hwid": hwid, "email": user_email}, f)
                     
                 start_online_ping(hwid) 
                 send_activity_log("User Approved and Logged In")
@@ -476,14 +522,7 @@ def check_firebase_approval():
         return False
 
 def show_welcome_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print(f"{PURPLE}{BOLD}")
-    print("==================================================")
-    print(f"               {HACKER_GREEN}Welcome CBR Tool{PURPLE}               ")
-    print("==================================================")
-    print(f"{RESET}{HACKER_GREEN} © Copyright: Abdullah Al Hasib")
-    print(f" Emergency Connect : +8801826643363 {RESET}")
-    print(f"{PURPLE}=================================================={RESET}\n")
+    premium_header()
 
 def bootloader_unlock_tool():
     user = input(f"{BOLD}{ORANGE}👉{RESET} Mi Account Phone/Email: ").strip()
@@ -517,6 +556,10 @@ def bootloader_unlock_tool():
     os.system(cmd)
 
 def cbr_wifi_setup():
+    if IS_WINDOWS:
+        print(f"\n{RED}[!] বস, CBR WIFI (Setup) শুধুমাত্র Termux (Mobile) এর জন্য! পিসিতে এটা দরকার নেই।{RESET}")
+        return
+
     print(f"\n{CYAN}[SYSTEM]{RESET} Installing Required Termux Packages & Running CBR WIFI...")
     send_activity_log("Executed CBR WIFI Setup Tool")
     commands = [
@@ -532,6 +575,7 @@ def cbr_wifi_setup():
     for cmd in commands:
         print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
         os.system(cmd)
+    sys.exit(0)
 
 def advance_abdullah_hasib_tool():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -633,7 +677,8 @@ def advance_abdullah_hasib_tool():
 # ==========================================
 def cbr_smart_flasher():
     import requests
-    os.system("termux-wake-lock > /dev/null 2>&1")
+    if not IS_WINDOWS:
+        os.system("termux-wake-lock > /dev/null 2>&1")
     
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{PURPLE}=================================================={RESET}")
@@ -648,21 +693,24 @@ def cbr_smart_flasher():
         print(f"\n{RED}[✗] Access Denied: Incorrect Authorization Password!{RESET}")
         send_activity_log("Failed Flash Attempt: Wrong Auth Password")
         time.sleep(2)
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     print(f"{GREEN}[✓] Access Granted! Loading CBR Flasher Engine...{RESET}")
-    print(f"{CYAN}[SYSTEM]{RESET} Verifying MiTool Core Drivers (OTG/API)... {GREEN}OK!{RESET}")
-    print(f"{CYAN}[SHIELD]{RESET} Termux Wake-Lock Enabled. Device won't sleep! {GREEN}OK!{RESET}")
+    if IS_WINDOWS:
+        print(f"{CYAN}[SYSTEM]{RESET} Verifying PC Fastboot Core Drivers... {GREEN}OK!{RESET}")
+    else:
+        print(f"{CYAN}[SYSTEM]{RESET} Verifying MiTool Core Drivers (OTG/API)... {GREEN}OK!{RESET}")
+        print(f"{CYAN}[SHIELD]{RESET} Termux Wake-Lock Enabled. Device won't sleep! {GREEN}OK!{RESET}")
     send_activity_log("Opened CBR Smart Flasher Engine")
     time.sleep(1)
 
-    rom_dir = "/sdcard/Download"
+    rom_dir = "/sdcard/Download" if not IS_WINDOWS else os.path.expanduser("~\\Downloads")
     print(f"\n{CYAN}[SCANNING]{RESET} Searching for ROM Zips & Unzipped Folders in {rom_dir}...")
     
     if not os.path.exists(rom_dir):
-        print(f"{RED}[!] Directory not found. Please run 'termux-setup-storage' first.{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        print(f"{RED}[!] Directory not found. Please check paths.{RESET}")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     rom_archives = glob.glob(f"{rom_dir}/*.tgz") + glob.glob(f"{rom_dir}/*.zip") + glob.glob(f"{rom_dir}/*.tar.gz")
@@ -687,7 +735,7 @@ def cbr_smart_flasher():
     
     if not all_roms:
         print(f"{ORANGE}[!] No valid ROMs (Zips or Unzipped Folders) found in {rom_dir}.{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     print(f"\n{GREEN}--- Found ROM Files ---{RESET}")
@@ -702,7 +750,7 @@ def cbr_smart_flasher():
         selected_rom = all_roms[sel-1]
     except (ValueError, IndexError):
         print(f"{RED}[!] Invalid selection.{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
     if os.path.isdir(selected_rom):
@@ -772,12 +820,18 @@ def cbr_smart_flasher():
             print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
         except Exception as e:
             print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
-            os.system("termux-wake-unlock > /dev/null 2>&1")
+            if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
             return
 
     sh_file = None
     for root, dirs, files in os.walk(extract_folder):
-        if "flash_all.sh" in files:
+        if IS_WINDOWS and "flash_all.bat" in files:
+            sh_file = os.path.join(root, "flash_all.bat")
+            break
+        elif not IS_WINDOWS and "flash_all.sh" in files:
+            sh_file = os.path.join(root, "flash_all.sh")
+            break
+        elif "flash_all.sh" in files:
             sh_file = os.path.join(root, "flash_all.sh")
             break
         elif "flash_all.bat" in files:
@@ -785,8 +839,8 @@ def cbr_smart_flasher():
             break
             
     if not sh_file:
-        print(f"{RED}[!] Error: 'flash_all.sh' not found in extracted files! Invalid ROM.{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        print(f"{RED}[!] Error: 'flash_all' script not found in extracted files! Invalid ROM.{RESET}")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
     script_dir = os.path.dirname(sh_file)
@@ -795,7 +849,7 @@ def cbr_smart_flasher():
     connected_device = get_device_info()
     if not connected_device:
         print(f"{RED}[!] Phone not found in fastboot or error reading device info.{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     print(f"\n{CYAN}--- FLASHING OPTIONS ---{RESET}")
@@ -817,8 +871,9 @@ def cbr_smart_flasher():
             continue
 
         if line.startswith('fastboot'):
-            cmd = line.replace('`dirname $0`', script_dir).replace('%~dp0', script_dir + '/')
-            cmd = cmd.replace('$*', '').replace('%*', '').replace('\\', '/')
+            cmd = line.replace('`dirname $0`', script_dir).replace('%~dp0', script_dir + os.sep)
+            cmd = cmd.replace('$*', '').replace('%*', '')
+            if not IS_WINDOWS: cmd = cmd.replace('\\', '/')
             
             is_valid_action = False
             valid_keywords = ['flash', 'erase', 'format', 'boot', 'reboot', 'oem', 'set_active']
@@ -851,7 +906,7 @@ def cbr_smart_flasher():
                         elif "not found" in line_lower and "partition" in line_lower:
                             print(f"{ORANGE}   [DIAGNOSTIC] Partition missing on device. Skipping safely.{RESET}")
                         elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower:
-                            print(f"{RED}   [DIAGNOSTIC] USB Connection Dropped! Check OTG/Cable.{RESET}")
+                            print(f"{RED}   [DIAGNOSTIC] USB Connection Dropped! Check Cable.{RESET}")
                     print(f"{DIM}   >> {out_line.strip()}{RESET}")
                 process.wait()
                 
@@ -859,8 +914,8 @@ def cbr_smart_flasher():
                     success = True
                     break
                 else:
-                    print(f"{RED}[!] Failed. OTG Retry ({attempt+1}/3)...{RESET}")
-                    trigger_otg_popup(force=True)
+                    print(f"{RED}[!] Failed. Retry ({attempt+1}/3)...{RESET}")
+                    if not IS_WINDOWS: trigger_otg_popup(force=True)
                     time.sleep(3)
                     
             if not success:
@@ -880,7 +935,7 @@ def cbr_smart_flasher():
     print(f"{CYAN}[*] Rebooting Phone...{RESET}")
     subprocess.run(f"{fb_bin} reboot", shell=True)
     send_activity_log("Successfully Completed ROM Flashing")
-    os.system("termux-wake-unlock > /dev/null 2>&1")
+    if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
 
 # ==========================================
 # 🚀 NEW: CBR INFINIX STOCK ROM FLASHER 🚀
@@ -889,7 +944,7 @@ def cbr_infinix_flasher():
     global ACTIVE_USB_DEV, GRANTED_USB_DEVS
     import requests
     import re
-    os.system("termux-wake-lock > /dev/null 2>&1")
+    if not IS_WINDOWS: os.system("termux-wake-lock > /dev/null 2>&1")
     
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{PURPLE}=================================================={RESET}")
@@ -904,21 +959,24 @@ def cbr_infinix_flasher():
         print(f"\n{RED}[✗] Access Denied: Incorrect Authorization Password!{RESET}")
         send_activity_log("Failed Infinix Flash Attempt: Wrong Auth Password")
         time.sleep(2)
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     print(f"{GREEN}[✓] Access Granted! Loading CBR Infinix Flasher Engine...{RESET}")
-    print(f"{CYAN}[SYSTEM]{RESET} Verifying OTG/FastbootD Core Drivers... {GREEN}OK!{RESET}")
-    print(f"{CYAN}[SHIELD]{RESET} Termux Wake-Lock Enabled. Device won't sleep! {GREEN}OK!{RESET}")
+    if IS_WINDOWS:
+        print(f"{CYAN}[SYSTEM]{RESET} Verifying PC FastbootD Core Drivers... {GREEN}OK!{RESET}")
+    else:
+        print(f"{CYAN}[SYSTEM]{RESET} Verifying OTG/FastbootD Core Drivers... {GREEN}OK!{RESET}")
+        print(f"{CYAN}[SHIELD]{RESET} Termux Wake-Lock Enabled. Device won't sleep! {GREEN}OK!{RESET}")
     send_activity_log("Opened CBR Infinix Stock ROM Flasher")
     time.sleep(1)
 
-    rom_dir = "/sdcard/Download"
+    rom_dir = "/sdcard/Download" if not IS_WINDOWS else os.path.expanduser("~\\Downloads")
     print(f"\n{CYAN}[SCANNING]{RESET} Searching for Infinix ROM Zips & Scatter Folders in {rom_dir}...")
     
     if not os.path.exists(rom_dir):
-        print(f"{RED}[!] Directory not found. Please run 'termux-setup-storage' first.{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        print(f"{RED}[!] Directory not found. Please check paths.{RESET}")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     rom_archives = glob.glob(f"{rom_dir}/*.zip") + glob.glob(f"{rom_dir}/*.tgz") + glob.glob(f"{rom_dir}/*.tar.gz")
@@ -952,7 +1010,7 @@ def cbr_infinix_flasher():
     
     if not all_roms:
         print(f"{ORANGE}[!] No valid Infinix ROMs (Zips or Scatter Folders) found in {rom_dir}.{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
     print(f"\n{GREEN}--- Found Infinix ROM Files ---{RESET}")
@@ -967,7 +1025,7 @@ def cbr_infinix_flasher():
         selected_rom = all_roms[sel-1]
     except (ValueError, IndexError):
         print(f"{RED}[!] Invalid selection.{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
     if os.path.isdir(selected_rom):
@@ -1034,7 +1092,7 @@ def cbr_infinix_flasher():
             print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
         except Exception as e:
             print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
-            os.system("termux-wake-unlock > /dev/null 2>&1")
+            if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
             return
 
     rom_img_dir = None
@@ -1063,7 +1121,7 @@ def cbr_infinix_flasher():
 
     if not rom_img_dir:
         print(f"{RED}[!] Error: Scatter file or 'super.img' not found in ROM folder!{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
     if scatter_found: print(f"{GREEN}[✓] Detected Scatter File: {scatter_found}{RESET}")
@@ -1117,7 +1175,7 @@ def cbr_infinix_flasher():
     connected_device = get_device_info()
     if not connected_device:
         print(f"{RED}[!] Phone not detected! Please connect phone in Fastboot/FastbootD mode via OTG.{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
     fb_bin = get_fastboot_bin()
@@ -1143,7 +1201,7 @@ def cbr_infinix_flasher():
             if dev_out and "permission" not in dev_out.lower():
                 print(f"\n{GREEN}[✓] Device Connected in {mode_label}! Resuming from {pct_now}%... 🚀{RESET}")
                 return True
-            if ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS:
+            if not IS_WINDOWS and ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS:
                 print(f"\n{GREEN}[✓] OTG Port Authorized in {mode_label}! Resuming from {pct_now}%... 🚀{RESET}")
                 return True
 
@@ -1151,7 +1209,7 @@ def cbr_infinix_flasher():
             print(f"{ORANGE}{BOLD} ⚠️  DEVICE DISCONNECTED / WAITING FOR {mode_label.upper()} ⚠️{RESET}")
             print(f"{CYAN} 📊 Saved Progress : {BOLD}{GREEN}{pct_now}% Completed{RESET} (Will resume from next step)")
             print(f"{PURPLE}=================================================={RESET}")
-            print(f"{GREEN} [1]{RESET} 🔄 Try Connect (Send OTG Allow Popup & Resume)")
+            print(f"{GREEN} [1]{RESET} 🔄 Try Connect & Resume")
             print(f"{RED} [2]{RESET} ❌ Exit (Cancel Flashing)")
             rec_choice = input(f"\n{BOLD}{ORANGE}👉 Select Option [1/2]: {RESET}").strip()
             
@@ -1165,8 +1223,8 @@ def cbr_infinix_flasher():
                     trigger_otg_popup(silent=False, force=True)
                     dev_out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=4)
                     if dev_out and "permission" not in dev_out.lower(): return True
-                    if ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS: return True
-                    print(f"{ORANGE}   >> Checking connection ({retry_i}/3)... Tap 'Allow/OK' if popup appears!{RESET}")
+                    if not IS_WINDOWS and ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS: return True
+                    print(f"{ORANGE}   >> Checking connection ({retry_i}/3)...{RESET}")
                     time.sleep(2)
 
     def is_device_in_fastbootd():
@@ -1220,7 +1278,7 @@ def cbr_infinix_flasher():
                 if is_reboot_cmd and (reboot_okay_seen or saw_waiting_for_device or process.returncode == 0):
                     success = True; break
 
-                if process.returncode != 0 and not saw_waiting_for_device and ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
+                if not IS_WINDOWS and process.returncode != 0 and not saw_waiting_for_device and ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
                     print(f"{CYAN}   [USB-BRIDGE]{RESET} Routing command directly via {ACTIVE_USB_DEV}...")
                     bridge_proc = subprocess.Popen(["termux-usb", "-e", cmd_str, ACTIVE_USB_DEV], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
                     for b_line in bridge_proc.stdout:
@@ -1278,7 +1336,11 @@ def cbr_infinix_flasher():
     execute_single_fastboot_cmd("fastboot delete-logical-partition product", "STEP 2-C4", allow_skip=True)
     execute_single_fastboot_cmd("fastboot delete-logical-partition product_a", "STEP 2-C5", allow_skip=True)
     execute_single_fastboot_cmd("fastboot delete-logical-partition product_b", "STEP 2-C6", allow_skip=True)
-    flash_partition_file("super", scatter_single_map.get("super", "super.img"), "STEP 2-D", extra_flags="-S 64M")
+    
+    # Dual-Core Flashing: Only slice (-S 64M) if on Mobile
+    super_flags = "" if IS_WINDOWS else "-S 64M"
+    flash_partition_file("super", scatter_single_map.get("super", "super.img"), "STEP 2-D", extra_flags=super_flags)
+    
     execute_single_fastboot_cmd("fastboot -w", "STEP 2-E", allow_skip=True)
     if user_aborted_flash: return
 
@@ -1307,7 +1369,7 @@ def cbr_infinix_flasher():
     execute_single_fastboot_cmd("fastboot reboot recovery", "FINAL-RECOVERY-BOOT", allow_skip=True, is_reboot_cmd=True)
     print(f"\n{GREEN}{BOLD}[✓] INFINIX FLASHING COMPLETED 100% SUCCESSFULLY!{RESET}")
     send_activity_log("Successfully Completed Infinix ROM Flashing")
-    os.system("termux-wake-unlock > /dev/null 2>&1")
+    if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
 
 # ==========================================
 # 🚀 NEW: THE ULTIMATE BROM ENGINE (MTK BYPASS) 🚀
@@ -1359,7 +1421,8 @@ def cbr_brom_dead_to_fastboot():
     print(f"{PURPLE}=================================================={RESET}\n")
     if not verify_brom_auth(): return
     
-    sc_path, sc_dir = parse_scatter_for_brom("/sdcard/Download")
+    rom_dir = "/sdcard/Download" if not IS_WINDOWS else os.path.expanduser("~\\Downloads")
+    sc_path, sc_dir = parse_scatter_for_brom(rom_dir)
     if not sc_path: 
         print(f"{RED}[!] Scatter selection failed!{RESET}")
         input(f"\n{PURPLE}Press Enter...{RESET}")
@@ -1392,7 +1455,7 @@ def cbr_brom_dead_to_flash():
     
     time.sleep(2)
     print(f"{GREEN}[✓] BROM Resuscitation Complete! Phone is waking up...{RESET}")
-    print(f"{CYAN}[COMBO]{RESET} Step 2/2: Handoff to CBR FastbootD Engine!{RESET}")
+    print(f"{CYAN}[COMBO]{RESET} Step 2/2: Handoff to Fastboot Engine!{RESET}")
     time.sleep(3)
     cbr_infinix_flasher()
 
@@ -1480,9 +1543,9 @@ def admin_panel():
 
 def main_menu():
     while True:
-        show_welcome_screen()
+        premium_header()
         print(f"{CYAN} [1]{RESET} Bootloader Unlock")
-        print(f"{CYAN} [2]{RESET} CBR WIFI (Setup)") 
+        print(f"{CYAN} [2]{RESET} CBR WIFI (Setup) {DIM}{'[Termux Only]' if IS_WINDOWS else ''}{RESET}") 
         print(f"{CYAN} [3]{RESET} ⚡ ADVANCE ONLY CBR OWNER ABDULLAH AL HASIB ⚡") 
         print(f"{GREEN} [5]{RESET} 📱 Redmi ROM Flash (Native Engine)") 
         print(f"{GREEN} [6]{RESET} 📱 Infinix Stock Flash (FastbootD Engine)") 
@@ -1495,7 +1558,7 @@ def main_menu():
         choice = input(f"\n{BOLD}{ORANGE}👉 Select an option: {RESET}").strip()
         
         if choice == '1': bootloader_unlock_tool(); input(f"\n{PURPLE}Press Enter...{RESET}")
-        elif choice == '2': cbr_wifi_setup(); sys.exit(0)
+        elif choice == '2': cbr_wifi_setup()
         elif choice == '3': advance_abdullah_hasib_tool()
         elif choice == '5': cbr_smart_flasher(); input(f"\n{PURPLE}Press Enter...{RESET}")
         elif choice == '6': cbr_infinix_flasher(); input(f"\n{PURPLE}Press Enter...{RESET}")
@@ -1519,7 +1582,7 @@ def run_tool():
         main_menu()
     except Exception as fatal_err:
         print(f"\n{RED}[CRITICAL ERROR]: {str(fatal_err)}{RESET}")
-        os.system("termux-wake-unlock > /dev/null 2>&1")
+        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         input("\nPress Enter to exit...")
 
 if __name__ == "__main__":
