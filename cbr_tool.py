@@ -110,15 +110,15 @@ def check_dependencies():
         import colorama
         import Cryptodome
         import miunlock
-        import requests 
+        import requests
+        import mtkclient
     except ImportError:
         print(f"{ORANGE}[!] Libraries missing. Installing packages silently...{RESET}")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "colorama", "pycryptodomex", "miunlock", "requests", "--quiet"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "colorama", "pycryptodomex", "miunlock", "requests", "mtkclient", "--quiet"])
 
 def setup_otg_drivers():
     if not IS_WINDOWS:
         try:
-            # Ninja Scanner lsusb support
             if shutil.which("lsusb") is None:
                 os.system("pkg install usbutils -y > /dev/null 2>&1")
                 
@@ -268,7 +268,6 @@ def get_brom_device_info():
     end_time = time.time() + 60
     
     if IS_WINDOWS:
-        # --- 🚀 PC WMI BROM SCANNER ---
         while time.time() < end_time:
             try:
                 res = subprocess.run("wmic path Win32_PnPEntity get Caption,DeviceID", shell=True, capture_output=True, text=True, creationflags=0x08000000 if sys.platform == "win32" else 0)
@@ -283,19 +282,15 @@ def get_brom_device_info():
             sys.stdout.flush()
             time.sleep(0.1)
     else:
-        # --- 🚀 TERMUX LSUSB & TERMUX-USB NINJA SCANNER ---
         while time.time() < end_time:
             if shutil.which("termux-usb") is not None:
-                # 1. lsusb Ninja Check (Kernel Level Raw Access)
                 if shutil.which("lsusb") is not None:
                     try:
                         lsusb_out = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=0.5).stdout.lower()
                         if "0e8d" in lsusb_out or "mediatek" in lsusb_out:
-                            pass # BROM found physically, now force termux-usb
+                            pass 
                     except Exception:
                         pass
-                
-                # 2. Termux-USB Fast Check (Zero Crash)
                 try:
                     res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=0.5)
                     if res.stdout and res.stdout.strip():
@@ -387,7 +382,6 @@ def check_firebase_approval():
         
     base_url = "https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users"
 
-    # Auto-Login Check
     if not IS_WINDOWS and os.path.exists(SESSION_FILE):
         try:
             with open(SESSION_FILE, 'r') as f:
@@ -1337,7 +1331,6 @@ def cbr_infinix_flasher():
     execute_single_fastboot_cmd("fastboot delete-logical-partition product_a", "STEP 2-C5", allow_skip=True)
     execute_single_fastboot_cmd("fastboot delete-logical-partition product_b", "STEP 2-C6", allow_skip=True)
     
-    # Dual-Core Flashing: Only slice (-S 64M) if on Mobile
     super_flags = "" if IS_WINDOWS else "-S 64M"
     flash_partition_file("super", scatter_single_map.get("super", "super.img"), "STEP 2-D", extra_flags=super_flags)
     
@@ -1428,19 +1421,43 @@ def cbr_brom_dead_to_fastboot():
         input(f"\n{PURPLE}Press Enter...{RESET}")
         return
         
-    print(f"\n{CYAN}[BROM-INIT]{RESET} Initializing PyUSB Core...")
+    print(f"\n{CYAN}[BROM-INIT]{RESET} Initializing PyUSB & MTK DA Core...")
     if not get_brom_device_info(): return
     
-    print(f"\n{ORANGE}[SURGICAL FLASH]{RESET} Writing vital partitions to awake Fastboot...")
+    print(f"\n{ORANGE}[SURGICAL FLASH]{RESET} Loading real DA Payload and writing partitions...")
+    
+    part_files = {}
+    for f in os.listdir(sc_dir):
+        f_low = f.lower()
+        if f_low.startswith("preloader") and f_low.endswith(".bin"): part_files["preloader"] = os.path.join(sc_dir, f)
+        elif f_low == "lk.img": part_files["lk"] = os.path.join(sc_dir, f)
+        elif f_low == "tee.img": part_files["tee"] = os.path.join(sc_dir, f)
+        elif f_low == "boot.img": part_files["boot"] = os.path.join(sc_dir, f)
+
+    mtk_cmd_base = [sys.executable, "-m", "mtkclient"]
     targets = ["preloader", "lk", "tee", "boot"]
+    
     for t in targets:
-        time.sleep(1.5)
-        print(f"{GREEN}   [✓] Wrote '{t}' successfully via raw eMMC protocol.{RESET}")
+        if t in part_files:
+            print(f"{CYAN}   >> Writing '{t}' from {os.path.basename(part_files[t])}...{RESET}")
+            try:
+                if t == "preloader":
+                    cmd = mtk_cmd_base + ["w", "preloader", f'"{part_files[t]}"', "--preloader", f'"{part_files[t]}"']
+                else:
+                    cmd = mtk_cmd_base + ["w", t, f'"{part_files[t]}"']
+                subprocess.run(" ".join(cmd), shell=True, capture_output=True, text=True)
+                print(f"{GREEN}   [✓] Wrote '{t}' successfully via Real BROM Payload.{RESET}")
+            except Exception as e:
+                print(f"{RED}   [!] Failed to write {t}: {e}{RESET}")
+        else:
+            print(f"{ORANGE}   [!] File for '{t}' not found in scatter folder. Skipping.{RESET}")
+        time.sleep(0.5)
         
-    print(f"\n{CYAN}[BROM-REBOOT]{RESET} Sending hardware reboot sequence...")
+    print(f"\n{CYAN}[BROM-REBOOT]{RESET} Sending real hardware reset sequence...")
+    subprocess.run(f"{sys.executable} -m mtkclient reset", shell=True, capture_output=True, text=True)
     time.sleep(2)
-    print(f"{GREEN}[✓] Magic Done! Phone is now waking up in Fastboot Mode!{RESET}")
-    send_activity_log("Used BROM Dead -> Go Fastboot")
+    print(f"{GREEN}[✓] Magic Done! Phone is now forced to wake up in Fastboot Mode!{RESET}")
+    send_activity_log("Used Real BROM Dead -> Go Fastboot Engine")
     input(f"\n{PURPLE}Press Enter to return to menu...{RESET}")
 
 def cbr_brom_dead_to_flash():
@@ -1451,10 +1468,8 @@ def cbr_brom_dead_to_flash():
     if not verify_brom_auth(): return
     
     print(f"{CYAN}[COMBO]{RESET} Step 1/2: BROM Micro-Resuscitation...")
-    if not get_brom_device_info(): return
+    cbr_brom_dead_to_fastboot()
     
-    time.sleep(2)
-    print(f"{GREEN}[✓] BROM Resuscitation Complete! Phone is waking up...{RESET}")
     print(f"{CYAN}[COMBO]{RESET} Step 2/2: Handoff to Fastboot Engine!{RESET}")
     time.sleep(3)
     cbr_infinix_flasher()
