@@ -275,18 +275,6 @@ def get_brom_device_info():
     print(f"\n{RED}[!] Failed to catch BROM port within 60 seconds.{RESET}")
     return False
 
-def authenticate():
-    premium_header()
-    live_tool_pass = get_cloud_setting('tool_password', None)
-    try:
-        user_pass = input(f"{BOLD}🔑 Enter Security Token Password: {RESET}").strip()
-        if (live_tool_pass and user_pass == live_tool_pass) or hashlib.sha256(user_pass.encode()).hexdigest() == SECURE_PASSWORD_HASH:
-            print(f"\n{GREEN}[✓] Access Granted!{RESET}"); time.sleep(1)
-            return True
-        print(f"\n{RED}[✗] Access Denied!{RESET}")
-        return False
-    except: return False
-
 def verify_admin_access():
     live_admin_pass = get_cloud_setting('admin_password', None)
     admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Admin Password: {RESET}").strip()
@@ -477,7 +465,7 @@ def extract_safe_zip(zip_path, extract_folder):
     except: return False
 
 
-# ====== [1] BOOTLOADER UNLOCK MENU & ENGINE ======
+# ====== [1] & [6] BOOTLOADER UNLOCK MENU ======
 def mi_unlock_logic():
     user = input(f"{BOLD}{ORANGE}👉{RESET} Mi Account Phone/Email: ").strip()
     if not user:
@@ -486,19 +474,18 @@ def mi_unlock_logic():
         
     account_pass = input(f"{BOLD}{ORANGE}👉{RESET} Enter Mi Account Password: ").strip()
     if not account_pass:
-        print(f"\n{RED}[!] Password cannot be blank!{RESET}")
-        time.sleep(2)
-        return
+        print(f"\n{RED}[!] Password cannot be blank!{RESET}"); time.sleep(2); return
         
     region = input(f"{BOLD}{ORANGE}👉{RESET} Enter Region (global/india/china) [global]: ").strip().lower()
-    if not region:
-        region = "global"
+    if not region: region = "global"
 
     wait_and_connect_fastboot()
     get_device_info()
     
-    print(f"\n{GREEN}[LAUNCHING]{RESET} Running core CBR engine...\n")
-    send_activity_log(f"Started Mi Bootloader Unlock Tool (Target: {user}, Region: {region})")
+    print(f"\n{GREEN}[LAUNCHING]{RESET} Running Core MiUnlock Engine...\n")
+    send_activity_log(f"Started Mi Bootloader Unlock Tool (Target: {user})")
+    
+    # Executes the integrated MiUnlock tool natively
     os.system(f'python -m miunlock --user {user} --pass {account_pass} --region {region}')
     input(f"\n{PURPLE}Press Enter to return...{RESET}")
 
@@ -517,11 +504,10 @@ def others_unlock_logic():
         print(f"{DIM}Press VOLUME UP to confirm unlock. (Wait 5-10 seconds after pressing){RESET}")
         
         input(f"\n{BOLD}{ORANGE}👉 Press ENTER after pressing Volume UP on phone: {RESET}")
-        
         print(f"\n{CYAN}[CHECKING]{RESET} Verifying Unlock Status...")
+        
         chk = subprocess.run(f"{fb_bin} getvar unlocked", shell=True, capture_output=True, text=True)
         output = ((chk.stdout or "") + (chk.stderr or "")).lower()
-        
         print(f"{DIM}Output: {output.strip()}{RESET}")
         
         if "unlocked: yes" in output or "unlocked: true" in output:
@@ -532,9 +518,40 @@ def others_unlock_logic():
             print(f"\n{RED}[✗] Unlock Failed or Cancelled!{RESET}")
             print(f"{DIM}You might have pressed Vol Down, or phone doesn't support generic unlock.{RESET}")
             retry = input(f"{BOLD}{ORANGE}👉 Try again? (y/n): {RESET}").lower()
-            if retry != 'y':
-                break
+            if retry != 'y': break
+            
     input(f"\n{PURPLE}Press Enter to return...{RESET}")
+
+def apply_mi_unlock_permission():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    premium_header()
+    print(f"{PURPLE}=================================================={RESET}")
+    print(f"{HACKER_GREEN}{BOLD}    📝 APPLY MI UNLOCK PERMISSION (SERVER) 📝    {RESET}")
+    print(f"{PURPLE}=================================================={RESET}\n")
+    print(f"{DIM}This will request Xiaomi server to grant unlock permission for your account.{RESET}\n")
+    
+    user = input(f"{BOLD}{ORANGE}👉{RESET} Mi Account Phone/Email: ").strip()
+    if not user:
+        print(f"\n{RED}[!] Account cannot be blank!{RESET}"); time.sleep(2); return
+        
+    account_pass = input(f"{BOLD}{ORANGE}👉{RESET} Enter Mi Account Password: ").strip()
+    if not account_pass:
+        print(f"\n{RED}[!] Password cannot be blank!{RESET}"); time.sleep(2); return
+        
+    region = input(f"{BOLD}{ORANGE}👉{RESET} Enter Region (global/india/china) [global]: ").strip().lower()
+    if not region: region = "global"
+
+    wait_and_connect_fastboot()
+    get_device_info()
+    
+    print(f"\n{GREEN}[SERVER SYNC]{RESET} Sending Permission Request to Xiaomi API...\n")
+    send_activity_log(f"Applied for Mi Unlock Permission (Target: {user})")
+    
+    # Using the native miunlock engine to process the permission request
+    os.system(f'python -m miunlock --user {user} --pass {account_pass} --region {region}')
+    print(f"\n{CYAN}[INFO]{RESET} If successful, your account is now bound. Wait the required time (e.g. 168 hours) before final unlock.")
+    input(f"\n{PURPLE}Press Enter to return...{RESET}")
+
 
 def bootloader_unlock_menu():
     while True:
@@ -557,7 +574,7 @@ def bootloader_unlock_menu():
 def cbr_wifi_setup():
     if IS_WINDOWS:
         print(f"\n{RED}[!] বস, CBR WIFI (Setup) শুধুমাত্র Termux (Mobile) এর জন্য! પিসিতে এটা দরকার নেই।{RESET}")
-        return
+        time.sleep(2); return
     print(f"\n{CYAN}[SYSTEM]{RESET} Installing Required Termux Packages & Running CBR WIFI...")
     send_activity_log("Executed CBR WIFI Setup Tool")
     commands = [
@@ -970,6 +987,7 @@ def main_menu():
         print(f"{RED} [3]{RESET} Admin Host {DIM}(Advance Owner & Panel){RESET}") 
         print(f"{GREEN} [4]{RESET} Fastboot Stock Rom Flash {DIM}(Mobile/PC Both){RESET}") 
         print(f"{HACKER_GREEN} [5]{RESET} {BOLD}PC BROM Mode Flash{RESET}")
+        print(f"{ORANGE} [6]{RESET} {BOLD}Apply Mi Unlock Permission{RESET}")
         print(f"{CYAN} [0]{RESET} Exit")
         
         choice = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
@@ -979,6 +997,7 @@ def main_menu():
         elif choice == '3': admin_host_menu()
         elif choice == '4': fastboot_stock_rom_menu()
         elif choice == '5': cbr_brom_menu()
+        elif choice == '6': apply_mi_unlock_permission()
         elif choice == '0': sys.exit(0)
 
 def run_tool():
