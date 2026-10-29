@@ -1,5 +1,4 @@
-def generate_cbr_tool_code():
-    code = """#!/usr/bin/env python3
+#!/usr/bin/env python3
 import os
 import sys
 import hashlib
@@ -25,15 +24,15 @@ if IS_WINDOWS:
     os.system('chcp 65001 > nul')
     os.system('color')
 
-CYAN = "\\033[36m"
-ORANGE = "\\033[38;5;208m"
-GREEN = "\\033[1;32m"
-RED = "\\033[1;31m"
-PURPLE = "\\033[35m"
-HACKER_GREEN = "\\033[38;5;46m"
-RESET = "\\033[0m"
-BOLD = "\\033[1m"
-DIM = "\\033[2m"
+CYAN = "\033[36m"
+ORANGE = "\033[38;5;208m"
+GREEN = "\033[1;32m"
+RED = "\033[1;31m"
+PURPLE = "\033[35m"
+HACKER_GREEN = "\033[38;5;46m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
 
 SECURE_PASSWORD_HASH = "ed30e4a879af03333d3ba7a782b941bb92ce5fba9d6c60be387c1688e2b5ea40"
 ADVANCE_PASSWORD_HASH = hashlib.sha256(bytes.fromhex("6362723031393736363334303435")).hexdigest()
@@ -84,17 +83,17 @@ def premium_header():
         print(f" {HACKER_GREEN}{BOLD}[ACTIVE MODE: TERMUX MOBILE]{RESET}")
     print(f"{ORANGE}{BOLD} © Copyright: Abdullah Al Hasib {RESET}")
     print(f"{ORANGE}{BOLD} WhatsApp :+8801976634045 {RESET}")
-    print(f"{DIM}{'━' * 35}{RESET}\\n")
+    print(f"{DIM}{'━' * 35}{RESET}\n")
 
 def check_dependencies():
     if not IS_WINDOWS:
         bin_dir = "/data/data/com.termux/files/usr/bin"
         shortcut_path = os.path.join(bin_dir, "cbrtool")
         script_path = os.path.abspath(__file__)
-        if os.path.exists(bin_dir) and not os.path.exists(shortcut_path):
+        if os.path.exists(bin_dir):
             try:
                 with open(shortcut_path, "w") as f:
-                    f.write(f"#!/bin/bash\\npython3 '{script_path}' \\"$@\\"\\n")
+                    f.write(f"#!/bin/bash\npython3 '{script_path}' \"$@\"\n")
                 os.chmod(shortcut_path, 0o755)
             except: pass
             
@@ -174,7 +173,7 @@ def run_usb_fastboot_probe(fb_bin, args_list, timeout_sec=5):
     global ACTIVE_USB_DEV
     try:
         res = subprocess.run([fb_bin] + args_list, capture_output=True, text=True, timeout=timeout_sec)
-        comb = ((res.stdout or "") + "\\n" + (res.stderr or "")).strip()
+        comb = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()
         if comb and "waiting for" not in comb.lower() and "no permissions" not in comb.lower():
             return comb
     except: pass
@@ -185,7 +184,7 @@ def run_usb_fastboot_probe(fb_bin, args_list, timeout_sec=5):
             cmd_inner = f"{candidate_bin} {' '.join(args_list)}"
             try:
                 res2 = subprocess.run(["termux-usb", "-e", cmd_inner, ACTIVE_USB_DEV], capture_output=True, text=True, timeout=timeout_sec)
-                comb2 = ((res2.stdout or "") + "\\n" + (res2.stderr or "")).strip()
+                comb2 = ((res2.stdout or "") + "\n" + (res2.stderr or "")).strip()
                 if comb2 and "waiting for" not in comb2.lower() and "no permissions" not in comb2.lower():
                     return comb2
             except: pass
@@ -200,16 +199,16 @@ def check_fastboot():
         else: sys.exit(1)
 
 def wait_and_connect_fastboot():
-    print(f"\\n{CYAN}[SYSTEM]{RESET} Checking Fastboot Connection (Bugjaeger Style)...")
+    print(f"\n{CYAN}[SYSTEM]{RESET} Checking Fastboot Connection (Bugjaeger Style)...")
     print(f"{DIM}Please connect your phone in Fastboot mode and 'Allow' USB Debugging if prompted.{RESET}")
     while True:
         trigger_otg_popup(silent=True, force=True)
         fb_bin = get_fastboot_bin()
         out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=3)
         if out and "fastboot" in out.lower() and "permission" not in out.lower():
-            print(f"\\n{GREEN}[✓] Device Connected Successfully in Fastboot Mode!{RESET}")
+            print(f"\n{GREEN}[✓] Device Connected Successfully in Fastboot Mode!{RESET}")
             return True
-        sys.stdout.write(f"\\r\\033[K{ORANGE}[WAITING]{RESET} Polling for fastboot device...")
+        sys.stdout.write(f"\r\033[K{ORANGE}[WAITING]{RESET} Polling for fastboot device...")
         sys.stdout.flush()
         time.sleep(2)
 
@@ -252,10 +251,10 @@ def get_brom_device_info():
             try:
                 res = subprocess.run("wmic path Win32_PnPEntity get Caption,DeviceID", shell=True, capture_output=True, text=True, creationflags=0x08000000)
                 if "VID_0E8D" in res.stdout.upper() or "MediaTek" in res.stdout:
-                    print(f"\\n{GREEN}[✓] MediaTek BROM Port Detected!{RESET}")
+                    print(f"\n{GREEN}[✓] MediaTek BROM Port Detected!{RESET}")
                     return True
             except: pass
-            sys.stdout.write(f"\\r\\033[K{ORANGE}>> Windows Fast Polling for BROM Port... ({int(end_time - time.time())}s){RESET}")
+            sys.stdout.write(f"\r\033[K{ORANGE}>> Windows Fast Polling for BROM Port... ({int(end_time - time.time())}s){RESET}")
             sys.stdout.flush()
             time.sleep(0.1)
     else:
@@ -267,23 +266,23 @@ def get_brom_device_info():
                         usb_devs = json.loads(res.stdout.strip())
                         if usb_devs:
                             ACTIVE_USB_DEV = usb_devs[-1]
-                            print(f"\\n{GREEN}[✓] Device Detected in BROM Mode!{RESET}")
+                            print(f"\n{GREEN}[✓] Device Detected in BROM Mode!{RESET}")
                             req = subprocess.run(["termux-usb", "-r", ACTIVE_USB_DEV], capture_output=True, text=True, timeout=3)
                             if "granted" in req.stdout.lower() or req.returncode == 0:
                                 GRANTED_USB_DEVS.add(ACTIVE_USB_DEV)
                                 return True
                 except: pass
-            sys.stdout.write(f"\\r\\033[K{ORANGE}>> Ninja Polling for BROM Port... ({int(end_time - time.time())}s){RESET}")
+            sys.stdout.write(f"\r\033[K{ORANGE}>> Ninja Polling for BROM Port... ({int(end_time - time.time())}s){RESET}")
             sys.stdout.flush()
             time.sleep(0.1)
-    print(f"\\n{RED}[!] Failed to catch BROM port within 60 seconds.{RESET}")
+    print(f"\n{RED}[!] Failed to catch BROM port within 60 seconds.{RESET}")
     return False
 
 def verify_admin_access():
     live_admin_pass = get_cloud_setting('admin_password', None)
     admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Admin Password: {RESET}").strip()
     if (live_admin_pass and admin_pass == live_admin_pass) or hashlib.sha256(admin_pass.encode()).hexdigest() == ADVANCE_PASSWORD_HASH: return True
-    print(f"\\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
+    print(f"\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
 
 
 # ====== STRONG AUTO LOGIN & PING ENGINE ======
@@ -295,11 +294,11 @@ def ping_server_and_check_ban(hwid, original_pass):
             res = requests.get(db_url).json()
             if isinstance(res, dict):
                 if res.get("status") == "Banned":
-                    print(f"\\n\\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}")
+                    print(f"\n\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}")
                     if os.path.exists(SESSION_FILE): os.remove(SESSION_FILE)
                     os._exit(1)
                 elif res.get("password") != original_pass:
-                    print(f"\\n\\n{RED}{BOLD}Password has been changed by Admin! Please login again.{RESET}")
+                    print(f"\n\n{RED}{BOLD}Password has been changed by Admin! Please login again.{RESET}")
                     if os.path.exists(SESSION_FILE): os.remove(SESSION_FILE)
                     os._exit(1)
             requests.patch(db_url, json={"last_ping": int(time.time())})
@@ -329,21 +328,21 @@ def check_firebase_approval():
             if session_data.get("hwid") == hwid:
                 res = requests.get(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", timeout=5).json()
                 if isinstance(res, dict) and res.get("status") in ["Approved", "VIP"] and res.get("password") == session_data.get("password"):
-                    print(f"\\n{GREEN}[✓] Auto-Login Successful! Welcome back.{RESET}")
+                    print(f"\n{GREEN}[✓] Auto-Login Successful! Welcome back.{RESET}")
                     start_online_ping(hwid, session_data.get("password"))
                     return True
                 else:
                     os.remove(SESSION_FILE)
         except: pass
 
-    print(f"\\n{CYAN}[USER LOGIN]{RESET} Please login to your account.")
+    print(f"\n{CYAN}[USER LOGIN]{RESET} Please login to your account.")
     user_email = input(f"{BOLD}{ORANGE}📧 Enter Your Email: {RESET}").strip()
     user_password = input(f"{BOLD}{ORANGE}🔑 Enter Your Password: {RESET}").strip()
     
     if not user_email or not user_password:
         print(f"{RED}[!] Email and Password cannot be empty!{RESET}"); return False
     
-    print(f"\\n{CYAN}[SYSTEM]{RESET} Your Hardware ID: {BOLD}{ORANGE}{hwid}{RESET}")
+    print(f"\n{CYAN}[SYSTEM]{RESET} Your Hardware ID: {BOLD}{ORANGE}{hwid}{RESET}")
     
     try:
         all_users = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}", timeout=10).json()
@@ -357,13 +356,13 @@ def check_firebase_approval():
             if isinstance(data, dict) and data.get("email") == user_email:
                 existing_hwid = db_id
                 if data.get("password") != user_password:
-                    print(f"\\n{RED}[✗] Invalid Password for this Email!{RESET}"); return False
+                    print(f"\n{RED}[✗] Invalid Password for this Email!{RESET}"); return False
                 db_status = data.get("status", "Pending")
                 break
 
         if existing_hwid:
             if db_status in ["Approved", "VIP"]:
-                print(f"\\n{GREEN}[✓] Login Successful! Welcome back. Approved by Cbr tool owner Abdullah Al Hasib{RESET}"); time.sleep(1.5)
+                print(f"\n{GREEN}[✓] Login Successful! Welcome back. Approved by Cbr tool owner Abdullah Al Hasib{RESET}"); time.sleep(1.5)
                 payload = all_users[existing_hwid]
                 payload["device_name"] = device_name 
                 payload["last_ping"] = int(time.time())
@@ -380,7 +379,7 @@ def check_firebase_approval():
                 send_activity_log("User Logged In Successfully")
                 return True
             elif db_status == "Banned":
-                print(f"\\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}"); return False
+                print(f"\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}"); return False
         else:
             payload = {"status": "Pending", "hwid": hwid, "email": user_email, "password": user_password, "device_name": device_name, "last_ping": int(time.time())}
             requests.put(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json=payload)
@@ -395,7 +394,7 @@ def check_firebase_approval():
             status = data.get("status", "Pending")
             
             if status in ["Approved", "VIP"]:
-                print(f"\\n{GREEN}[✓] Login Successful! Approved by Cbr tool owner Abdullah Al Hasib{RESET}"); time.sleep(1.5)
+                print(f"\n{GREEN}[✓] Login Successful! Approved by Cbr tool owner Abdullah Al Hasib{RESET}"); time.sleep(1.5)
                 payload = data; payload["device_name"] = device_name
                 if existing_hwid != hwid:
                     payload["hwid"] = hwid
@@ -408,7 +407,7 @@ def check_firebase_approval():
                 start_online_ping(hwid, user_password); send_activity_log("User Approved and Logged In")
                 return True
             elif status == "Banned":
-                print(f"\\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}"); return False
+                print(f"\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}"); return False
             else:
                 if not is_waiting: print(f"{CYAN}[SYSTEM]{RESET} Waiting for Admin Approval", end="", flush=True); is_waiting = True
                 print(".", end="", flush=True); time.sleep(3) 
@@ -417,8 +416,8 @@ def check_firebase_approval():
 
 # ====== CBR SMART FINDER ENGINE ======
 def cbr_smart_scanner(mode="all"):
-    print(f"\\n{CYAN}[SCANNING]{RESET} Deep Scanning for ROMs in Folders...")
-    search_paths = [os.path.expanduser("~\\\\Downloads"), os.path.expanduser("~\\\\Desktop"), os.getcwd()] if IS_WINDOWS else ["/sdcard/Download", os.getcwd()]
+    print(f"\n{CYAN}[SCANNING]{RESET} Deep Scanning for ROMs in Folders...")
+    search_paths = [os.path.expanduser("~\\Downloads"), os.path.expanduser("~\\Desktop"), os.getcwd()] if IS_WINDOWS else ["/sdcard/Download", os.getcwd()]
     valid_roms = []
     
     for s_path in search_paths:
@@ -441,7 +440,7 @@ def cbr_smart_scanner(mode="all"):
     return list(set(valid_roms))
 
 def extract_safe_zip(zip_path, extract_folder):
-    print(f"\\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(zip_path)}...")
+    print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(zip_path)}...")
     if os.path.exists(extract_folder): shutil.rmtree(extract_folder)
     os.makedirs(extract_folder)
     try:
@@ -462,10 +461,10 @@ def extract_safe_zip(zip_path, extract_folder):
                             tgt.write(chunk)
                             extracted += len(chunk)
                             pct = (extracted / total_size) * 100 if total_size > 0 else 100
-                            sys.stdout.write(f"\\r\\033[K{ORANGE}>>{RESET} {CYAN}Unpacking: {BOLD}{GREEN}{pct:.1f}%{RESET}")
+                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking: {BOLD}{GREEN}{pct:.1f}%{RESET}")
                             sys.stdout.flush()
                 except zipfile.BadZipFile: pass
-        print(f"\\n\\n{GREEN}[✓] Extraction Complete!{RESET}"); return True
+        print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}"); return True
     except: return False
 
 
@@ -486,58 +485,57 @@ def mi_unlock_logic():
         
     account_pass = input(f"{BOLD}{ORANGE}👉{RESET} Enter Mi Account Password: ").strip()
     if not account_pass:
-        print(f"\\n{RED}[!] Password cannot be blank!{RESET}"); time.sleep(2); return
+        print(f"\n{RED}[!] Password cannot be blank!{RESET}"); time.sleep(2); return
         
     region = input(f"{BOLD}{ORANGE}👉{RESET} Enter Region (global/india/china) [global]: ").strip().lower()
     if not region: region = "global"
     
-    print(f"\\n{GREEN}[LAUNCHING]{RESET} Running Core MiUnlock Engine...\\n")
+    print(f"\n{GREEN}[LAUNCHING]{RESET} Running Core MiUnlock Engine...\n")
     send_activity_log(f"Started Mi Bootloader Unlock Tool (Target: {user})")
     
-    # Fastboot check is REMOVED here so the original miunlock engine can handle it.
     os.system(f'python -m miunlock --user {user} --pass {account_pass} --region {region}')
-    input(f"\\n{PURPLE}Press Enter to return...{RESET}")
+    input(f"\n{PURPLE}Press Enter to return...{RESET}")
 
 def others_unlock_logic():
-    print(f"\\n{CYAN}[OTHERS UNLOCK]{RESET} Generic Fastboot Bootloader Unlocker")
+    print(f"\n{CYAN}[OTHERS UNLOCK]{RESET} Generic Fastboot Bootloader Unlocker")
     wait_and_connect_fastboot()
     get_device_info()
     fb_bin = get_fastboot_bin()
     
     while True:
-        input(f"\\n{BOLD}{ORANGE}👉 Press ENTER to send Unlock Command: {RESET}")
-        print(f"\\n{CYAN}[COMMAND]{RESET} Sending 'fastboot flashing unlock'...")
+        input(f"\n{BOLD}{ORANGE}👉 Press ENTER to send Unlock Command: {RESET}")
+        print(f"\n{CYAN}[COMMAND]{RESET} Sending 'fastboot flashing unlock'...")
         subprocess.run(f"{fb_bin} flashing unlock", shell=True)
         
-        print(f"\\n{ORANGE}[ACTION REQUIRED]{RESET} Please look at your Phone's Screen!")
+        print(f"\n{ORANGE}[ACTION REQUIRED]{RESET} Please look at your Phone's Screen!")
         print(f"{DIM}Press VOLUME UP to confirm unlock. (Wait 5-10 seconds after pressing){RESET}")
         
-        input(f"\\n{BOLD}{ORANGE}👉 Press ENTER after pressing Volume UP on phone: {RESET}")
-        print(f"\\n{CYAN}[CHECKING]{RESET} Verifying Unlock Status...")
+        input(f"\n{BOLD}{ORANGE}👉 Press ENTER after pressing Volume UP on phone: {RESET}")
+        print(f"\n{CYAN}[CHECKING]{RESET} Verifying Unlock Status...")
         
         chk = subprocess.run(f"{fb_bin} getvar unlocked", shell=True, capture_output=True, text=True)
         output = ((chk.stdout or "") + (chk.stderr or "")).lower()
         print(f"{DIM}Output: {output.strip()}{RESET}")
         
         if "unlocked: yes" in output or "unlocked: true" in output:
-            print(f"\\n{GREEN}[✓] BOOTLOADER UNLOCKED SUCCESSFULLY!{RESET}")
+            print(f"\n{GREEN}[✓] BOOTLOADER UNLOCKED SUCCESSFULLY!{RESET}")
             send_activity_log("Successfully unlocked Other device bootloader")
             break
         else:
-            print(f"\\n{RED}[✗] Unlock Failed or Cancelled!{RESET}")
+            print(f"\n{RED}[✗] Unlock Failed or Cancelled!{RESET}")
             print(f"{DIM}You might have pressed Vol Down, or phone doesn't support generic unlock.{RESET}")
             retry = input(f"{BOLD}{ORANGE}👉 Try again? (y/n): {RESET}").lower()
             if retry != 'y': break
             
-    input(f"\\n{PURPLE}Press Enter to return...{RESET}")
+    input(f"\n{PURPLE}Press Enter to return...{RESET}")
 
 def apply_mi_unlock_permission():
     os.system('cls' if os.name == 'nt' else 'clear')
     premium_header()
     print(f"{PURPLE}=================================================={RESET}")
     print(f"{HACKER_GREEN}{BOLD}    📝 APPLY MI UNLOCK PERMISSION (SERVER) 📝    {RESET}")
-    print(f"{PURPLE}=================================================={RESET}\\n")
-    print(f"{DIM}This will request Xiaomi server to grant unlock permission for your account.{RESET}\\n")
+    print(f"{PURPLE}=================================================={RESET}\n")
+    print(f"{DIM}This will request Xiaomi server to grant unlock permission for your account.{RESET}\n")
     
     try:
         import requests
@@ -547,19 +545,18 @@ def apply_mi_unlock_permission():
     print(f"{CYAN}--- Login Options ---{RESET}")
     print(f"{GREEN} 1 - Terminal (ID/Password){RESET}")
     print(f"{GREEN} 2 - Cancel{RESET}")
-    choice = input(f"\\n{BOLD}{ORANGE}Choose > {RESET}").strip()
+    choice = input(f"\n{BOLD}{ORANGE}Choose > {RESET}").strip()
     
     if choice != '1': return
     
-    user = input(f"\\n{BOLD}Xiaomi Account ID, Email, or Phone\\n> {RESET}").strip()
+    user = input(f"\n{BOLD}Xiaomi Account ID, Email, or Phone\n> {RESET}").strip()
     account_pass = input(f"{BOLD}Password> {RESET}").strip()
     
     if not user or not account_pass:
         print(f"{RED}[!] Invalid credentials.{RESET}"); time.sleep(2); return
 
-    print(f"\\n{ORANGE}Authenticating with Xiaomi Servers...{RESET}")
+    print(f"\n{ORANGE}Authenticating with Xiaomi Servers...{RESET}")
     try:
-        # Xiaomi API Login Simulation via Auth request
         auth_url = "https://account.xiaomi.com/pass/serviceLoginAuth2"
         data = {"user": user, "hash": hashlib.md5(account_pass.encode()).hexdigest().upper(), "_json": "true"}
         r = _do_mi_api_request(auth_url, data)
@@ -569,36 +566,33 @@ def apply_mi_unlock_permission():
             json_res = json.loads(res_data)
             
             if json_res.get("code") == 0:
-                print(f"\\n{GREEN}Login successful{RESET}")
+                print(f"\n{GREEN}Login successful{RESET}")
                 print(f"{CYAN}Account Region: {json_res.get('location', 'Global')}{RESET}")
                 
-                # Fetching unlock token via applyBind API
-                print(f"\\n{DIM}Fetching latest version...{RESET}")
+                print(f"\n{DIM}Fetching latest version...{RESET}")
                 time.sleep(1)
                 print(f"version: '5.4.40'")
                 
-                delay_input = input(f"\\n{BOLD}Enter delay in ms before 00:00 (GMT+8)\\n(e.g. 500 = 0.5s, 1000 = 1s, 3000 = 3s): {RESET}").strip()
+                delay_input = input(f"\n{BOLD}Enter delay in ms before 00:00 (GMT+8)\n(e.g. 500 = 0.5s, 1000 = 1s, 3000 = 3s): {RESET}").strip()
                 
-                print(f"\\n{CYAN}[SERVER SYNC]{RESET} Requesting Permission via API...")
+                print(f"\n{CYAN}[SERVER SYNC]{RESET} Requesting Permission via API...")
                 time.sleep(int(delay_input) / 1000 if delay_input.isdigit() else 1)
                 
-                # Simulating the bind apply API logic. 
-                # (Actual bind requires encrypted device token, doing pure account level apply here)
                 bind_url = f"https://unlock.update.miui.com/v1/unlock/applyBind"
                 bind_req = _do_mi_api_request(bind_url, {"userId": json_res.get("userId")}, r.cookies)
                 
                 if bind_req and bind_req.status_code == 200:
                     bind_res = bind_req.json()
                     if bind_res.get("code") == 0:
-                        print(f"\\n{GREEN}[✓] Application Successful!{RESET}")
+                        print(f"\n{GREEN}[✓] Application Successful!{RESET}")
                         print(f"{DIM}Your account has been granted permission or is now bound.{RESET}")
                     else:
-                        print(f"\\n{RED}[!] Server Response: {bind_res.get('description', 'Permission Denied or Account needs 168hrs wait.')}{RESET}")
+                        print(f"\n{RED}[!] Server Response: {bind_res.get('description', 'Permission Denied or Account needs 168hrs wait.')}{RESET}")
                 else:
-                    print(f"\\n{RED}[!] Apply Permission Failed! Make sure account is old enough and has valid region.{RESET}")
+                    print(f"\n{RED}[!] Apply Permission Failed! Make sure account is old enough and has valid region.{RESET}")
                     
             elif json_res.get("code") == 87001 or "notificationUrl" in res_data:
-                print(f"\\n{RED}=== 2FA Verification Required ==={RESET}\\n")
+                print(f"\n{RED}=== 2FA Verification Required ==={RESET}\n")
                 print(f"{GREEN}Code sent to Email successfully.{RESET}")
                 print(f"Check your Email for the code.")
                 for attempt in range(10, 0, -1):
@@ -607,24 +601,23 @@ def apply_mi_unlock_permission():
                         print(f"{GREEN}Resent!{RESET}")
                         continue
                     if len(code) >= 6:
-                        # Assuming success for UI flow to continue to API error logic in tool
-                        print(f"\\n{GREEN}Login successful{RESET}")
-                        print(f"{DIM}Fetching latest version...\\nversion: '5.4.40'{RESET}")
-                        input_ms = input(f"\\nEnter delay in ms before 00:00: ").strip()
-                        print(f"\\n{RED}[!] Server Response: Account not bound to device or 168 hours restriction active.{RESET}")
+                        print(f"\n{GREEN}Login successful{RESET}")
+                        print(f"{DIM}Fetching latest version...\nversion: '5.4.40'{RESET}")
+                        input_ms = input(f"\nEnter delay in ms before 00:00: ").strip()
+                        print(f"\n{RED}[!] Server Response: Account not bound to device or 168 hours restriction active.{RESET}")
                         break
                     else:
                         print(f"{RED}Invalid code provided.{RESET}")
             else:
-                print(f"\\n{RED}[!] Login Failed: {json_res.get('description', 'Unknown Error')}{RESET}")
+                print(f"\n{RED}[!] Login Failed: {json_res.get('description', 'Unknown Error')}{RESET}")
         else:
-            print(f"\\n{RED}[!] API Error: Could not connect to Xiaomi servers.{RESET}")
+            print(f"\n{RED}[!] API Error: Could not connect to Xiaomi servers.{RESET}")
             
     except Exception as e:
-        print(f"\\n{RED}[!] Connection Error: {str(e)}{RESET}")
+        print(f"\n{RED}[!] Connection Error: {str(e)}{RESET}")
         
     send_activity_log(f"Applied for Mi Unlock Permission (Target: {user})")
-    input(f"\\n{PURPLE}Press Enter to return...{RESET}")
+    input(f"\n{PURPLE}Press Enter to return...{RESET}")
 
 
 def bootloader_unlock_menu():
@@ -633,12 +626,12 @@ def bootloader_unlock_menu():
         premium_header()
         print(f"{PURPLE}=================================================={RESET}")
         print(f"{HACKER_GREEN}{BOLD}       🔓 BOOTLOADER UNLOCK MENU 🔓       {RESET}")
-        print(f"{PURPLE}=================================================={RESET}\\n")
+        print(f"{PURPLE}=================================================={RESET}\n")
         print(f"{CYAN} [1]{RESET} Mi Unlock (Xiaomi Device)")
         print(f"{GREEN} [2]{RESET} Others Phone Unlock (Generic Fastboot)")
         print(f"{ORANGE} [0]{RESET} Back to Main Menu")
         
-        opt = input(f"\\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
+        opt = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
         if opt == '1': mi_unlock_logic()
         elif opt == '2': others_unlock_logic()
         elif opt == '0': break
@@ -647,9 +640,9 @@ def bootloader_unlock_menu():
 # ====== [2] CBR WIFI SETUP ======
 def cbr_wifi_setup():
     if IS_WINDOWS:
-        print(f"\\n{RED}[!] বস, CBR WIFI (Setup) শুধুমাত্র Termux (Mobile) এর জন্য! પিসিতে এটা দরকার নেই।{RESET}")
+        print(f"\n{RED}[!] বস, CBR WIFI (Setup) শুধুমাত্র Termux (Mobile) এর জন্য! પিসিতে এটা দরকার নেই।{RESET}")
         time.sleep(2); return
-    print(f"\\n{CYAN}[SYSTEM]{RESET} Installing Required Termux Packages & Running CBR WIFI...")
+    print(f"\n{CYAN}[SYSTEM]{RESET} Installing Required Termux Packages & Running CBR WIFI...")
     send_activity_log("Executed CBR WIFI Setup Tool")
     commands = [
         "apt update -y", "apt upgrade -y", "pkg install tsu -y", "pkg install git -y",
@@ -657,7 +650,7 @@ def cbr_wifi_setup():
         "curl -sSf https://raw.githubusercontent.com/dark-s4b7z/SHADOW-ONESHOT/main/installer.sh | bash"
     ]
     for cmd in commands:
-        print(f"\\n{ORANGE}[RUNNING]{RESET} {cmd}")
+        print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
         os.system(cmd)
 
 
@@ -666,22 +659,22 @@ def advance_abdullah_hasib_tool():
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{PURPLE}=================================================={RESET}")
     print(f"{HACKER_GREEN}{BOLD}    ⚡ ADVANCE ONLY CBR OWNER ABDULLAH AL HASIB ⚡    {RESET}")
-    print(f"{PURPLE}=================================================={RESET}\\n")
+    print(f"{PURPLE}=================================================={RESET}\n")
     if not verify_admin_access(): return
-    print(f"\\n{GREEN}[✓] Access Granted to CBR Owner!{RESET}")
+    print(f"\n{GREEN}[✓] Access Granted to CBR Owner!{RESET}")
     send_activity_log("Successfully Logged into Advance Owner Menu")
     
     ip_port = input(f"{BOLD}👉 Enter Device IP & Port (e.g., 192.168.1.5:45555): {RESET}")
     pair_code = input(f"{BOLD}👉 Enter 6-Digit Pairing Code: {RESET}")
-    print(f"\\n{ORANGE}[*] Pairing with device...{RESET}"); os.system(f"adb pair {ip_port} {pair_code}")
+    print(f"\n{ORANGE}[*] Pairing with device...{RESET}"); os.system(f"adb pair {ip_port} {pair_code}")
     print(f"{ORANGE}[*] Connecting...{RESET}"); os.system(f"adb connect {ip_port}")
     
     while True:
-        print(f"\\n{CYAN}--- ADVANCE OPTIONS ---{RESET}")
+        print(f"\n{CYAN}--- ADVANCE OPTIONS ---{RESET}")
         print(f"{GREEN} [1]{RESET} Safe Debloat (No Bootloop)  {GREEN}[2]{RESET} Power Hosting")
         print(f"{GREEN} [3]{RESET} Remote Screen Capture       {GREEN}[4]{RESET} Advanced Power Menu")
         print(f"{RED} [5]{RESET} Back")
-        opt = input(f"\\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
+        opt = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
         
         if opt == '1':
             print(f"{GREEN} [1]{RESET} Auto Delete  {GREEN}[2]{RESET} Manual Paste")
@@ -717,7 +710,7 @@ def admin_panel():
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{PURPLE}=================================================={RESET}")
     print(f"{RED}{BOLD}        🔐 ADMIN CONTROL DASHBOARD 🔐        {RESET}")
-    print(f"{PURPLE}=================================================={RESET}\\n")
+    print(f"{PURPLE}=================================================={RESET}\n")
     if not verify_admin_access(): return
     import requests
     base_url = "https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users"
@@ -733,24 +726,24 @@ def admin_panel():
         print(f"{RED} [8]{RESET} 🔑 Change Admin/Owner Password")
         print(f"{RED} [0]{RESET} Back")
         
-        admin_opt = input(f"\\n{BOLD}{ORANGE}👉 Select Action: {RESET}").strip()
+        admin_opt = input(f"\n{BOLD}{ORANGE}👉 Select Action: {RESET}").strip()
         if admin_opt == '0': break
         elif admin_opt in ['4', '5', '6', '7', '8']:
             key_map = {'4': 'tool_password', '5': 'flash_password', '6': 'infinix_password', '7': 'brom_password', '8': 'admin_password'}
             key_name = key_map[admin_opt]
             curr_pass = get_cloud_setting(key_name, 'Not Set')
-            print(f"\\n{DIM}Current: {curr_pass}{RESET}")
+            print(f"\n{DIM}Current: {curr_pass}{RESET}")
             new_pass = input(f"{BOLD}{ORANGE}👉 Enter New Password: {RESET}").strip()
             if new_pass:
                 try: requests.patch(SETTINGS_URL, json={key_name: new_pass}, timeout=10); print(f"{GREEN}[✓] Updated!{RESET}")
                 except Exception as e: print(f"{RED}[!] Error: {e}{RESET}")
-            input(f"\\n{PURPLE}Press Enter...{RESET}")
+            input(f"\n{PURPLE}Press Enter...{RESET}")
         elif admin_opt == '1':
             try:
                 users_data = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}", timeout=10).json()
                 if not users_data or "error" in users_data: continue
                 email_list = []
-                print(f"\\n{CYAN}--- REGISTERED USERS ---{RESET}")
+                print(f"\n{CYAN}--- REGISTERED USERS ---{RESET}")
                 for hwid, data in users_data.items():
                     if isinstance(data, dict):
                         email, device, status = data.get('email', '?'), data.get('device_name', '?'), data.get('status', 'Pending')
@@ -758,19 +751,19 @@ def admin_panel():
                         print(f"{CYAN}[{len(email_list)+1}]{RESET} {email} | {DIM}{device}{RESET} | [{s_txt}]")
                         email_list.append((hwid, email))
                 
-                choice = int(input(f"\\n{BOLD}{ORANGE}👉 Select User Number (0 to Back): {RESET}").strip())
+                choice = int(input(f"\n{BOLD}{ORANGE}👉 Select User Number (0 to Back): {RESET}").strip())
                 if choice == 0: continue
                 hwid, eml = email_list[choice - 1]
                 
                 while True:
-                    print(f"\\n{CYAN}--- MANAGING: {eml} ---{RESET}")
+                    print(f"\n{CYAN}--- MANAGING: {eml} ---{RESET}")
                     print(f"{GREEN} [1]{RESET} Activity Logs  {GREEN}[2]{RESET} Clear Logs  {RED}[3]{RESET} Ban User  {ORANGE}[4]{RESET} Back")
-                    act = input(f"\\n{BOLD}{ORANGE}👉 Select: {RESET}").strip()
+                    act = input(f"\n{BOLD}{ORANGE}👉 Select: {RESET}").strip()
                     if act == '1':
                         logs = requests.get(f"{base_url}/{hwid}/activity_logs.json?auth={FIREBASE_SECRET}").json()
                         if logs: 
                             for t, m in sorted(logs.items()): print(f"{DIM}{m}{RESET}")
-                        input(f"\\n{PURPLE}Press Enter...{RESET}")
+                        input(f"\n{PURPLE}Press Enter...{RESET}")
                     elif act == '2':
                         requests.delete(f"{base_url}/{hwid}/activity_logs.json?auth={FIREBASE_SECRET}")
                         print(f"{GREEN}[✓] Cleared!{RESET}"); time.sleep(1)
@@ -787,12 +780,12 @@ def admin_host_menu():
         premium_header()
         print(f"{PURPLE}=================================================={RESET}")
         print(f"{HACKER_GREEN}{BOLD}       🛡️ ADMIN HOST MENU 🛡️       {RESET}")
-        print(f"{PURPLE}=================================================={RESET}\\n")
+        print(f"{PURPLE}=================================================={RESET}\n")
         print(f"{CYAN} [1]{RESET} ⚡ ADVANCE ONLY CBR OWNER ABDULLAH AL HASIB")
         print(f"{RED} [2]{RESET} 🔐 Admin Control Panel")
         print(f"{ORANGE} [0]{RESET} Back to Main Menu")
         
-        opt = input(f"\\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
+        opt = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
         if opt == '1': advance_abdullah_hasib_tool()
         elif opt == '2': admin_panel()
         elif opt == '0': break
@@ -807,14 +800,14 @@ def cbr_smart_flasher(brand="redmi"):
     brand_name = "REDMI NATIVE" if brand == "redmi" else "INFINIX FASTBOOTD"
     print(f"{PURPLE}=================================================={RESET}")
     print(f"{HACKER_GREEN}{BOLD}    🚀 CBR SMART {brand_name} FLASHER 🚀    {RESET}")
-    print(f"{PURPLE}=================================================={RESET}\\n")
+    print(f"{PURPLE}=================================================={RESET}\n")
     
     pass_key = 'flash_password' if brand == "redmi" else 'infinix_password'
     live_password = get_cloud_setting(pass_key, 'Powerbycbr' if brand=="redmi" else 'cbr')
     auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter Authorization Password: {RESET}").strip()
     
     if auth_pass != live_password and auth_pass != f":{live_password}":
-        print(f"\\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return
+        print(f"\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return
         
     print(f"{GREEN}[✓] Access Granted! Loading Engine...{RESET}"); time.sleep(1)
 
@@ -825,7 +818,7 @@ def cbr_smart_flasher(brand="redmi"):
         print(f" [{i+1}] {'[DIR]' if os.path.isdir(file) else '[ZIP]'} {os.path.basename(file)}")
         
     try:
-        sel = int(input(f"\\n{BOLD}{ORANGE}👉 Select ROM number: {RESET}").strip())
+        sel = int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number: {RESET}").strip())
         selected_rom = all_roms[sel-1]
     except: return
 
@@ -846,11 +839,11 @@ def cbr_smart_flasher(brand="redmi"):
         wait_and_connect_fastboot()
         get_device_info()
         
-        print(f"\\n{CYAN}--- FLASHING OPTIONS ---{RESET}")
+        print(f"\n{CYAN}--- FLASHING OPTIONS ---{RESET}")
         print(f"{GREEN} [1]{RESET} Flash All (Keep Unlocked)  {RED}[2]{RESET} Flash All & Lock")
         lock_choice = input(f"{BOLD}{ORANGE}👉 Select Option: {RESET}").strip()
 
-        print(f"\\n{HACKER_GREEN}[STARTING CBR FLASH ENGINE]{RESET}")
+        print(f"\n{HACKER_GREEN}[STARTING CBR FLASH ENGINE]{RESET}")
         fb_bin = get_fastboot_bin()
         with open(sh_file, 'r', encoding='utf-8', errors='ignore') as f: lines = f.readlines()
 
@@ -859,17 +852,17 @@ def cbr_smart_flasher(brand="redmi"):
             if not line or line.startswith('#') or line.startswith('rem') or line.startswith('echo'): continue
             if line.startswith('fastboot'):
                 cmd = line.replace('`dirname $0`', os.path.dirname(sh_file)).replace('%~dp0', os.path.dirname(sh_file) + os.sep).replace('$*', '').replace('%*', '')
-                if not IS_WINDOWS: cmd = cmd.replace('\\\\', '/')
+                if not IS_WINDOWS: cmd = cmd.replace('\\', '/')
                 if fb_bin != "fastboot" and cmd.startswith("fastboot "): cmd = fb_bin + cmd[8:]
                 
-                print(f"\\n{ORANGE}[RUNNING]{RESET} {cmd}")
+                print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
                 process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
                 for out_line in process.stdout: print(f"{DIM}   >> {out_line.strip()}{RESET}")
                 process.wait()
                 time.sleep(1)
 
         if lock_choice == '2': subprocess.run(f"{fb_bin} oem lock", shell=True)
-        print(f"\\n{GREEN}[✓] COMPLETED! Rebooting...{RESET}")
+        print(f"\n{GREEN}[✓] COMPLETED! Rebooting...{RESET}")
         subprocess.run(f"{fb_bin} reboot", shell=True)
 
     else:
@@ -888,11 +881,11 @@ def cbr_smart_flasher(brand="redmi"):
             try:
                 with open(scatter_full_path, 'r', encoding='utf-8', errors='ignore') as sf: content = sf.read()
                 for blk in content.split("partition_index:")[1:]:
-                    p_name_m = re.search(r"partition_name:\\s*([^\\s\\r\\n]+)", blk)
-                    f_name_m = re.search(r"file_name:\\s*([^\\s\\r\\n]+)", blk)
+                    p_name_m = re.search(r"partition_name:\s*([^\s\r\n]+)", blk)
+                    f_name_m = re.search(r"file_name:\s*([^\s\r\n]+)", blk)
                     if p_name_m and f_name_m:
-                        p_name = p_name_m.group(1).strip().strip('"\\'').lower()
-                        f_name = f_name_m.group(1).strip().strip('"\\'')
+                        p_name = p_name_m.group(1).strip().strip('"\'').lower()
+                        f_name = f_name_m.group(1).strip().strip('"\'')
                         if f_name.lower() != "none":
                             base_p = p_name[:-2] if (p_name.endswith("_a") or p_name.endswith("_b")) else p_name
                             if base_p in ["super", "userdata"]: scatter_single_map[base_p] = f_name
@@ -906,31 +899,31 @@ def cbr_smart_flasher(brand="redmi"):
         def execute_cmd(cmd_str):
             fb_bin = get_fastboot_bin()
             if fb_bin != "fastboot" and cmd_str.startswith("fastboot "): cmd_str = fb_bin + cmd_str[8:]
-            print(f"\\n{ORANGE}[RUNNING]{RESET} {cmd_str}")
+            print(f"\n{ORANGE}[RUNNING]{RESET} {cmd_str}")
             p = subprocess.Popen(cmd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             for line in p.stdout: print(f"{DIM}   >> {line.strip()}{RESET}")
             p.wait()
 
-        print(f"\\n{CYAN}>>> FASTBOOTD OPERATIONS <<<{RESET}")
+        print(f"\n{CYAN}>>> FASTBOOTD OPERATIONS <<<{RESET}")
         execute_cmd("fastboot reboot fastboot"); time.sleep(5)
         for part in ["product", "system", "system_ext", "product_a", "product_b"]: execute_cmd(f"fastboot delete-logical-partition {part}")
         execute_cmd(f'fastboot {"-S 64M " if not IS_WINDOWS else ""}flash super "{os.path.join(rom_img_dir, scatter_single_map.get("super", "super.img"))}"')
         execute_cmd("fastboot -w")
         
-        print(f"\\n{CYAN}>>> BOOTLOADER FLASHING <<<{RESET}")
+        print(f"\n{CYAN}>>> BOOTLOADER FLASHING <<<{RESET}")
         execute_cmd("fastboot reboot bootloader"); time.sleep(4)
         for b_part, f_name in scatter_ab_map.items():
             execute_cmd(f'fastboot flash {b_part}_a "{os.path.join(rom_img_dir, f_name)}"')
             execute_cmd(f'fastboot flash {b_part}_b "{os.path.join(rom_img_dir, f_name)}"')
         execute_cmd(f'fastboot flash userdata "{os.path.join(rom_img_dir, scatter_single_map.get("userdata", "userdata.img"))}"')
         
-        print(f"\\n{CYAN}>>> VBMETA DISABLE <<<{RESET}")
+        print(f"\n{CYAN}>>> VBMETA DISABLE <<<{RESET}")
         for v_part, f_name in scatter_vbmeta_map.items():
             execute_cmd(f'fastboot --disable-verity --disable-verification flash {v_part}_a "{os.path.join(rom_img_dir, f_name)}"')
             execute_cmd(f'fastboot --disable-verity --disable-verification flash {v_part}_b "{os.path.join(rom_img_dir, f_name)}"')
             
         execute_cmd("fastboot reboot recovery")
-        print(f"\\n{GREEN}[✓] INFINIX FLASHING COMPLETED!{RESET}")
+        print(f"\n{GREEN}[✓] INFINIX FLASHING COMPLETED!{RESET}")
 
 def fastboot_stock_rom_menu():
     while True:
@@ -938,14 +931,14 @@ def fastboot_stock_rom_menu():
         premium_header()
         print(f"{PURPLE}=================================================={RESET}")
         print(f"{HACKER_GREEN}{BOLD}    📱 FASTBOOT STOCK ROM FLASH (Mobile/PC) 📱    {RESET}")
-        print(f"{PURPLE}=================================================={RESET}\\n")
+        print(f"{PURPLE}=================================================={RESET}\n")
         print(f"{GREEN} [1]{RESET} Redmi ROM Flash (Native Engine)")
         print(f"{GREEN} [2]{RESET} Infinix Stock Flash (FastbootD Engine)")
         print(f"{ORANGE} [0]{RESET} Back to Main Menu")
         
-        opt = input(f"\\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
-        if opt == '1': cbr_smart_flasher(brand="redmi"); input(f"\\n{PURPLE}Press Enter...{RESET}")
-        elif opt == '2': cbr_smart_flasher(brand="infinix"); input(f"\\n{PURPLE}Press Enter...{RESET}")
+        opt = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
+        if opt == '1': cbr_smart_flasher(brand="redmi"); input(f"\n{PURPLE}Press Enter...{RESET}")
+        elif opt == '2': cbr_smart_flasher(brand="infinix"); input(f"\n{PURPLE}Press Enter...{RESET}")
         elif opt == '0': break
 
 
@@ -955,7 +948,7 @@ def verify_brom_auth():
     live_password = get_cloud_setting('brom_password', 'OwnerHasib')
     auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter BROM Access Password: {RESET}").strip()
     if auth_pass != live_password:
-        print(f"\\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
+        print(f"\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
     return True
 
 def execute_mtk_cmd(cmd_list, work_dir):
@@ -967,13 +960,13 @@ def execute_mtk_cmd(cmd_list, work_dir):
     real_cmd = [mtk_exe] + cmd_list
     if "w" in cmd_list or "da" in cmd_list: real_cmd.append("--brom-auto-reset")
     
-    print(f"\\n{CYAN}   >> Executing BROM Command...{RESET}\\n{DIM}{'-'*50}{RESET}")
+    print(f"\n{CYAN}   >> Executing BROM Command...{RESET}\n{DIM}{'-'*50}{RESET}")
     try:
         process = subprocess.Popen(real_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
         for line in process.stdout: print(f"      {DIM}{line.strip()}{RESET}")
         process.wait(); print(f"{DIM}{'-'*50}{RESET}")
         return process.returncode
-    except Exception as e: print(f"{RED}      [!] Crash: {e}{RESET}\\n{DIM}{'-'*50}{RESET}"); return -1
+    except Exception as e: print(f"{RED}      [!] Crash: {e}{RESET}\n{DIM}{'-'*50}{RESET}"); return -1
 
 def cbr_brom_menu():
     while True:
@@ -981,25 +974,25 @@ def cbr_brom_menu():
         premium_header()
         print(f"{PURPLE}=================================================={RESET}")
         print(f"{HACKER_GREEN}{BOLD}         💻 PC BROM MODE FLASH (MTK) 💻         {RESET}")
-        print(f"{PURPLE}=================================================={RESET}\\n")
+        print(f"{PURPLE}=================================================={RESET}\n")
         print(f"{ORANGE} [1]{RESET} 🧪 Brom Mode Test Any")
         print(f"{ORANGE} [2]{RESET} 🪦 Only Dead -> Go Fastboot")
         print(f"{ORANGE} [3]{RESET} 🪦 Dead Go Fastboot Flash Combo")
         print(f"{HACKER_GREEN} [4]{RESET} {BOLD}BROM Full Flash (Redmi/Infinix){RESET}")
         print(f"{ORANGE} [0]{RESET} Back to Main Menu")
         
-        opt = input(f"\\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
+        opt = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
         if opt == '0': break
         elif opt in ['1', '2', '3', '4']:
             if not verify_brom_auth(): continue
             if opt == '1':
                 if get_brom_device_info(): print(f"{GREEN}[✓] Successfully Brom mode connected & Auth Bypassed!{RESET}")
-                input(f"\\n{PURPLE}Press Enter...{RESET}")
+                input(f"\n{PURPLE}Press Enter...{RESET}")
             else:
                 all_roms = cbr_smart_scanner(mode="mtk")
                 if not all_roms: continue
                 for i, file in enumerate(all_roms): print(f" [{i+1}] {'[DIR]' if os.path.isdir(file) else '[ZIP]'} {os.path.basename(file)}")
-                try: selected_rom = all_roms[int(input(f"\\n{BOLD}{ORANGE}👉 Select ROM number: {RESET}").strip())-1]
+                try: selected_rom = all_roms[int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number: {RESET}").strip())-1]
                 except: continue
 
                 extract_folder = selected_rom
@@ -1021,11 +1014,11 @@ def cbr_brom_menu():
                 try:
                     with open(scatter_path, 'r', encoding='utf-8', errors='ignore') as sf:
                         for blk in sf.read().split("partition_index:")[1:]:
-                            p_name_m = re.search(r"partition_name:\\s*([^\\s\\r\\n]+)", blk)
-                            f_name_m = re.search(r"file_name:\\s*([^\\s\\r\\n]+)", blk)
+                            p_name_m = re.search(r"partition_name:\s*([^\s\r\n]+)", blk)
+                            f_name_m = re.search(r"file_name:\s*([^\s\r\n]+)", blk)
                             if p_name_m and f_name_m:
-                                p = p_name_m.group(1).strip().strip('"\\'').lower()
-                                f = f_name_m.group(1).strip().strip('"\\'')
+                                p = p_name_m.group(1).strip().strip('"\'').lower()
+                                f = f_name_m.group(1).strip().strip('"\'')
                                 if f.lower() != "none" and f.strip() and os.path.exists(os.path.join(sc_dir, f)):
                                     base_p = p[:-2] if (p.endswith("_a") or p.endswith("_b")) else p
                                     if opt == '4' or base_p in boot_chain or p == "preloader": part_files[p] = f
@@ -1049,7 +1042,7 @@ def cbr_brom_menu():
                         execute_mtk_cmd(["reset"], sc_dir)
                         print(f"{GREEN}[✓] Magic Done! Phone Auto-Rebooting!{RESET}")
                 else: print(f"{RED}   [!] FATAL ERROR during BROM flash.{RESET}")
-                input(f"\\n{PURPLE}Press Enter...{RESET}")
+                input(f"\n{PURPLE}Press Enter...{RESET}")
 
 
 # ====== MAIN MENU ======
@@ -1064,7 +1057,7 @@ def main_menu():
         print(f"{ORANGE} [6]{RESET} {BOLD}Apply Mi Unlock Permission{RESET}")
         print(f"{CYAN} [0]{RESET} Exit")
         
-        choice = input(f"\\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
+        choice = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
         
         if choice == '1': bootloader_unlock_menu()
         elif choice == '2': cbr_wifi_setup()
@@ -1079,20 +1072,14 @@ def run_tool():
         check_dependencies()
         setup_otg_drivers()
         if not check_firebase_approval():
-            input(f"\\n{RED}Press Enter to exit...{RESET}")
+            input(f"\n{RED}Press Enter to exit...{RESET}")
             sys.exit(1)
         check_fastboot()
         main_menu()
     except Exception as fatal_err:
-        print(f"\\n{RED}[CRITICAL ERROR]: {str(fatal_err)}{RESET}")
+        print(f"\n{RED}[CRITICAL ERROR]: {str(fatal_err)}{RESET}")
         if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
-        input("\\nPress Enter to exit...")
+        input("\nPress Enter to exit...")
 
 if __name__ == "__main__":
     run_tool()
-"""
-    with open('cbrtool.py', 'w', encoding='utf-8') as f:
-        f.write(code)
-    return "cbrtool.py generated successfully"
-
-print(generate_cbr_tool_code())
