@@ -12,6 +12,7 @@ import tarfile
 import zipfile
 import glob
 import json
+import re
 
 # 💻 DUAL-CORE ARCHITECTURE DETECTOR 📱
 IS_WINDOWS = (platform.system().lower() == "windows")
@@ -45,7 +46,6 @@ ACTIVE_USB_DEV = None
 GRANTED_USB_DEVS = set()
 
 def get_cloud_setting(key, default_val):
-    """Smart Cloud Fetcher with Timeout to prevent fallback bugs"""
     try:
         import requests
         res = requests.get(SETTINGS_URL, timeout=8).json()
@@ -106,35 +106,42 @@ def check_dependencies():
         except ImportError:
             print(f"{ORANGE}[*] Repairing Termux SSL & OpenSSL modules... Please wait.{RESET}")
             os.system("pkg update -y && pkg install openssl ca-certificates python -y")
+    
     try:
-        import colorama
-        import Cryptodome
-        import miunlock
-        import requests
-        import mtkclient
+        import colorama, Cryptodome, miunlock, requests 
     except ImportError:
-        print(f"{ORANGE}[!] Libraries missing. Installing packages silently...{RESET}")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "colorama", "pycryptodomex", "miunlock", "requests", "mtkclient", "--quiet"])
+        print(f"{ORANGE}[*] Installing basic libraries...{RESET}")
+        subprocess.call([sys.executable, "-m", "pip", "install", "colorama", "pycryptodomex", "miunlock", "requests"])
+
+    if IS_WINDOWS:
+        mtk_bin = shutil.which("mtk")
+        if not mtk_bin:
+            scripts_dir = os.path.join(os.path.dirname(sys.executable), "Scripts")
+            if not os.path.exists(os.path.join(scripts_dir, "mtk.exe")):
+                print(f"{ORANGE}[*] High-Power Engine (mtkclient) missing! Forcing installation...{RESET}")
+                subprocess.call([sys.executable, "-m", "pip", "install", "mtkclient"])
+    else:
+        try:
+            import mtkclient
+        except ImportError:
+            print(f"{ORANGE}[*] High-Power Engine (mtkclient) missing! Forcing installation...{RESET}")
+            subprocess.call([sys.executable, "-m", "pip", "install", "mtkclient"])
 
 def setup_otg_drivers():
     if not IS_WINDOWS:
         try:
             if shutil.which("lsusb") is None:
                 os.system("pkg install usbutils -y > /dev/null 2>&1")
-                
             if not os.path.exists("/data/data/com.termux/files/usr/bin/termux-usb"):
-                print(f"{ORANGE}[*] Installing Advanced OTG Drivers (libusb, termux-api)...{RESET}")
                 os.system("pkg install termux-api libusb -y > /dev/null 2>&1")
             if not os.path.exists("/data/data/com.termux/files/usr/bin/termux-fastboot"):
-                print(f"{ORANGE}[*] Installing Termux-ADB Engine (nohajc repo)...{RESET}")
                 os.system("curl -fsS https://raw.githubusercontent.com/nohajc/termux-adb/master/install.sh | bash > /dev/null 2>&1")
         except:
             pass
 
 def get_fastboot_bin():
-    if not IS_WINDOWS:
-        if shutil.which("termux-fastboot") is not None:
-            return "termux-fastboot"
+    if not IS_WINDOWS and shutil.which("termux-fastboot") is not None:
+        return "termux-fastboot"
     return "fastboot"
 
 def trigger_otg_popup(silent=False, force=False):
@@ -253,7 +260,6 @@ def get_device_info():
             print(f"{ORANGE}[!] Waiting for Device Connection... ({attempt+1}/5){RESET}")
         else:
             print(f"{ORANGE}[!] Waiting for OTG Allow Popup... Please tap 'Allow/OK' on screen! ({attempt+1}/5){RESET}")
-            print(f"{DIM}    (Tip: Make sure 'OTG Connection' is ON in Phone Settings & Termux:API app is installed){RESET}")
         time.sleep(2)
             
     print(f"{ORANGE}[!] Could not read device product name. Check USB cable & Fastboot mode.{RESET}")
@@ -273,7 +279,6 @@ def get_brom_device_info():
                 res = subprocess.run("wmic path Win32_PnPEntity get Caption,DeviceID", shell=True, capture_output=True, text=True, creationflags=0x08000000 if sys.platform == "win32" else 0)
                 if "VID_0E8D" in res.stdout.upper() or "MediaTek" in res.stdout:
                     print(f"\n{GREEN}[✓] MediaTek BROM Port Detected (PC/COM)!{RESET}")
-                    print(f"{GREEN}[✓] PC Native BROM Auth Bypassed & Locked!{RESET}")
                     return True
             except Exception:
                 pass
@@ -284,13 +289,6 @@ def get_brom_device_info():
     else:
         while time.time() < end_time:
             if shutil.which("termux-usb") is not None:
-                if shutil.which("lsusb") is not None:
-                    try:
-                        lsusb_out = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=0.5).stdout.lower()
-                        if "0e8d" in lsusb_out or "mediatek" in lsusb_out:
-                            pass 
-                    except Exception:
-                        pass
                 try:
                     res = subprocess.run(["termux-usb", "-l"], capture_output=True, text=True, timeout=0.5)
                     if res.stdout and res.stdout.strip():
@@ -298,7 +296,6 @@ def get_brom_device_info():
                         if isinstance(usb_devs, list) and len(usb_devs) > 0:
                             ACTIVE_USB_DEV = usb_devs[-1]
                             print(f"\n{GREEN}[✓] Device Detected in BROM Mode ({ACTIVE_USB_DEV})!{RESET}")
-                            
                             req = subprocess.run(["termux-usb", "-r", ACTIVE_USB_DEV], capture_output=True, text=True, timeout=3)
                             req_out = ((req.stdout or "") + (req.stderr or "")).lower()
                             if "granted" in req_out or "yes" in req_out or req.returncode == 0:
@@ -309,7 +306,6 @@ def get_brom_device_info():
                     pass
                 except Exception:
                     pass
-                    
             rem_time = int(end_time - time.time())
             sys.stdout.write(f"\r\033[K{ORANGE}>> Ninja Polling for BROM Port... ({rem_time}s remaining){RESET}")
             sys.stdout.flush()
@@ -410,7 +406,6 @@ def check_firebase_approval():
         
         if isinstance(all_users, dict) and "error" in all_users:
             print(f"\n{RED}[!] Firebase Database Blocked: {all_users['error']}{RESET}")
-            print(f"{ORANGE}[*] বস, আপনার Firebase Rules এর মেয়াদ শেষ হয়ে গেছে। দয়া করে Rules এ গিয়ে read, write: true করে দিন।{RESET}")
             return False
 
         if all_users is None:
@@ -512,7 +507,6 @@ def check_firebase_approval():
             
     except Exception as e:
         print(f"\n{RED}[!] Server connection failed! Please check your internet.{RESET}")
-        print(f"{ORANGE}[DEBUG ERROR]: {e}{RESET}")
         return False
 
 def show_welcome_screen():
@@ -548,28 +542,6 @@ def bootloader_unlock_tool():
     send_activity_log(f"Started Bootloader Unlock Tool (Target: {user}, Region: {region})")
     cmd = f'python -m miunlock --user {user} --pass {account_pass} --region {region}'
     os.system(cmd)
-
-def cbr_wifi_setup():
-    if IS_WINDOWS:
-        print(f"\n{RED}[!] বস, CBR WIFI (Setup) শুধুমাত্র Termux (Mobile) এর জন্য! পিসিতে এটা দরকার নেই।{RESET}")
-        return
-
-    print(f"\n{CYAN}[SYSTEM]{RESET} Installing Required Termux Packages & Running CBR WIFI...")
-    send_activity_log("Executed CBR WIFI Setup Tool")
-    commands = [
-        "apt update -y",
-        "apt upgrade -y",
-        "pkg install tsu -y",
-        "pkg install git -y",
-        "pkg install -y root-repo",
-        "pkg install sudo -y",
-        "pkg install python -y",
-        "curl -sSf https://raw.githubusercontent.com/dark-s4b7z/SHADOW-ONESHOT/main/installer.sh | bash"
-    ]
-    for cmd in commands:
-        print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
-        os.system(cmd)
-    sys.exit(0)
 
 def advance_abdullah_hasib_tool():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -666,9 +638,354 @@ def advance_abdullah_hasib_tool():
         else:
             print(f"{RED}Invalid Option!{RESET}")
 
+
+# ====== CBR ULTRA-DEEP FINDER ENGINE ======
+def cbr_smart_scanner(mode="all"):
+    """ Searches current dir, Desktop and Downloads for ANY hidden scatter folder up to 4 levels deep """
+    print(f"\n{CYAN}[SCANNING]{RESET} Ultra-Deep Scanning for ROMs & Scatter Folders...")
+    
+    search_paths = []
+    if IS_WINDOWS:
+        search_paths.append(os.path.expanduser("~\\Downloads"))
+        search_paths.append(os.path.expanduser("~\\Desktop"))
+        search_paths.append(os.getcwd())
+    else:
+        search_paths.append("/sdcard/Download")
+        search_paths.append(os.getcwd())
+        
+    valid_roms = []
+    for s_path in search_paths:
+        if not os.path.exists(s_path): continue
+        
+        valid_roms.extend(glob.glob(f"{s_path}/*.zip") + glob.glob(f"{s_path}/*.tgz") + glob.glob(f"{s_path}/*.tar.gz"))
+        
+        try:
+            for root, dirs, files in os.walk(s_path):
+                if "CBR_Extracted" in root: continue
+                depth = root[len(s_path):].count(os.sep)
+                if depth > 4: 
+                    del dirs[:]
+                    continue
+                    
+                is_valid = False
+                for f in files:
+                    f_low = f.lower()
+                    if mode == "mtk" and "scatter" in f_low and f_low.endswith(".txt"):
+                        is_valid = True; break
+                    elif mode == "fastboot" and (f_low == "flash_all.sh" or f_low == "flash_all.bat"):
+                        is_valid = True; break
+                    elif mode == "all" and ("scatter" in f_low or f_low == "flash_all.sh" or f_low == "flash_all.bat"):
+                        is_valid = True; break
+                        
+                if is_valid and root not in valid_roms:
+                    valid_roms.append(root)
+        except: pass
+        
+    return list(set(valid_roms))
+
+def extract_safe_zip(zip_path, extract_folder):
+    print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(zip_path)}...")
+    if os.path.exists(extract_folder): shutil.rmtree(extract_folder)
+    os.makedirs(extract_folder)
+    
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            total_size = sum(info.file_size for info in zf.infolist())
+            extracted = 0
+            for info in zf.infolist():
+                target = os.path.join(extract_folder, info.filename)
+                if info.is_dir() or info.filename.endswith('/'):
+                    os.makedirs(target, exist_ok=True); continue
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                if os.path.isdir(target): continue
+                
+                try:
+                    with zf.open(info) as src, open(target, 'wb') as tgt:
+                        while True:
+                            chunk = src.read(1024 * 1024)
+                            if not chunk: break
+                            tgt.write(chunk)
+                            extracted += len(chunk)
+                            pct = (extracted / total_size) * 100 if total_size > 0 else 100
+                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking: {BOLD}{GREEN}{pct:.1f}%{RESET}")
+                            sys.stdout.flush()
+                except zipfile.BadZipFile: pass
+        print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
+        return True
+    except Exception as e:
+        print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
+        return False
+
+
 # ==========================================
-# 🚀 NEW: CBR SMART FLASHER & EXTRACTOR 🚀
+# 🚀 BROM ENGINE FIX (NO SHELL FORMAT) 🚀
 # ==========================================
+def verify_brom_auth():
+    print(f"{CYAN}[SECURITY]{RESET} Connecting to Cloud Authorization for BROM Engine...")
+    live_password = get_cloud_setting('brom_password', 'OwnerHasib')
+    auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter BROM Access Password: {RESET}").strip()
+    if auth_pass != live_password:
+        print(f"\n{RED}[✗] Access Denied: Incorrect BROM Password!{RESET}")
+        send_activity_log("Failed BROM Access Attempt")
+        time.sleep(2)
+        return False
+    print(f"{GREEN}[✓] Access Granted! Loading BROM Core...{RESET}")
+    return True
+
+def execute_mtk_cmd(cmd_list, work_dir):
+    """ Executes MTK command perfectly using array list to prevent SPACE BUGS in Windows """
+    mtk_exe = shutil.which("mtk")
+    if not mtk_exe and IS_WINDOWS:
+        mtk_exe = os.path.join(os.path.dirname(sys.executable), "Scripts", "mtk.exe")
+    
+    if not mtk_exe or not os.path.exists(mtk_exe):
+        print(f"{RED}[!] FATAL ERROR: 'mtk' command not found!{RESET}")
+        print(f"{DIM}    Make sure you have run: python -m pip install mtkclient{RESET}")
+        return -1
+
+    os.chdir(work_dir)
+    real_cmd = [mtk_exe] + cmd_list
+    
+    # Adding security bypass arguments automatically for strict devices like Redmi 9
+    if "w" in cmd_list or "da" in cmd_list:
+        real_cmd.append("--brom-auto-reset")
+        
+    print(f"\n{CYAN}   >> Executing BROM Command... (Live Console Output Below){RESET}")
+    print(f"{DIM}{'-'*50}{RESET}")
+    
+    try:
+        process = subprocess.Popen(real_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
+        for line in process.stdout:
+            print(f"      {line.strip()}")
+        process.wait()
+        print(f"{DIM}{'-'*50}{RESET}")
+        return process.returncode
+    except Exception as e:
+        print(f"{RED}      [!] Engine Crash: {e}{RESET}")
+        print(f"{DIM}{'-'*50}{RESET}")
+        return -1
+
+
+def cbr_brom_dead_to_fastboot():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(f"{PURPLE}=================================================={RESET}")
+    print(f"{HACKER_GREEN}{BOLD}    🪦 DEAD -> GO FASTBOOT (SURGICAL FLASH) 🪦    {RESET}")
+    print(f"{PURPLE}=================================================={RESET}\n")
+    if not verify_brom_auth(): return
+    
+    all_roms = cbr_smart_scanner(mode="mtk")
+    if not all_roms: return
+    
+    for i, file in enumerate(all_roms):
+        print(f" [{i+1}] {'[DIR]' if os.path.isdir(file) else '[ZIP]'} {os.path.basename(file)}")
+        
+    try:
+        sel = int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number: {RESET}").strip())
+        selected_rom = all_roms[sel-1]
+    except (ValueError, IndexError):
+        print(f"{RED}[!] Invalid selection.{RESET}")
+        return
+        
+    extract_folder = selected_rom
+    if not os.path.isdir(selected_rom):
+        extract_folder = os.path.join(os.path.dirname(selected_rom), "CBR_Extracted_MTK")
+        if not extract_safe_zip(selected_rom, extract_folder): return
+
+    scatter_path = None
+    for root, dirs, files in os.walk(extract_folder):
+        for f in files:
+            if "scatter" in f.lower() and f.endswith(".txt"):
+                scatter_path = os.path.join(root, f); break
+        if scatter_path: break
+        
+    if not scatter_path: 
+        print(f"{RED}[!] Scatter file not found!{RESET}")
+        input(f"\n{PURPLE}Press Enter...{RESET}")
+        return
+    sc_dir = os.path.dirname(scatter_path)
+        
+    print(f"\n{CYAN}[BROM-INIT]{RESET} Initializing PyUSB & MTK DA Core...")
+    if not get_brom_device_info(): return
+    
+    print(f"\n{ORANGE}[SURGICAL FLASH]{RESET} Loading real DA Payload and writing Boot-Chain...")
+    
+    part_files = {}
+    boot_chain = ["preloader", "lk", "tee", "boot", "scp", "sspm", "md1img", "spmfw", "pi_img", "dtbo", "vbmeta"]
+
+    try:
+        with open(scatter_path, 'r', encoding='utf-8', errors='ignore') as sf:
+            for blk in sf.read().split("partition_index:")[1:]:
+                p_name_m = re.search(r"partition_name:\s*([^\s\r\n]+)", blk)
+                f_name_m = re.search(r"file_name:\s*([^\s\r\n]+)", blk)
+                is_dl_m = re.search(r"is_download:\s*([^\s\r\n]+)", blk)
+                if p_name_m and f_name_m:
+                    p = p_name_m.group(1).strip().strip('"\'').lower()
+                    f = f_name_m.group(1).strip().strip('"\'')
+                    is_dl = is_dl_m.group(1).strip().lower() if is_dl_m else "true"
+                    if is_dl == "true" and f.lower() != "none" and f.strip():
+                        base_p = p[:-2] if (p.endswith("_a") or p.endswith("_b")) else p
+                        if base_p in boot_chain or p == "preloader":
+                            if os.path.exists(os.path.join(sc_dir, f)):
+                                part_files[p] = f
+    except Exception as e:
+        print(f"{RED}[!] Scatter parse error: {e}{RESET}")
+
+    parts_to_write = []
+    files_to_write = []
+    preloader_file = ""
+
+    for t, f_name in part_files.items():
+        parts_to_write.append(t)
+        files_to_write.append(f_name)
+        if t in ["preloader", "preloader_a"]: 
+            preloader_file = f_name
+
+    if parts_to_write:
+        parts_str = ",".join(parts_to_write)
+        files_str = ",".join(files_to_write)
+        
+        cmd_args = ["w", parts_str, files_str]
+        if preloader_file:
+            cmd_args.extend(["--preloader", preloader_file])
+            
+        print(f"{CYAN}   >> Preparing to write {len(parts_to_write)} vital boot partitions... Do NOT disconnect!{RESET}")
+        
+        ret_code = execute_mtk_cmd(cmd_args, sc_dir)
+        
+        if ret_code == 0:
+            print(f"{GREEN}   [✓] Wrote successfully via Real BROM Payload (Zero Disconnect).{RESET}")
+        else:
+            print(f"{RED}   [!] FATAL ERROR during BROM flash. Read the output logs above.{RESET}")
+            input(f"\n{PURPLE}Press Enter to return...{RESET}")
+            return
+    else:
+        print(f"{RED}   [!] Vital files not found in scatter folder.{RESET}")
+        return
+        
+    print(f"\n{CYAN}[BROM-REBOOT]{RESET} Sending real hardware reset sequence...")
+    execute_mtk_cmd(["reset"], sc_dir)
+    time.sleep(2)
+    print(f"{GREEN}[✓] Magic Done! Phone is now forced to wake up in Fastboot Mode!{RESET}")
+    send_activity_log("Used Ultimate Real BROM Dead -> Go Fastboot Engine")
+    input(f"\n{PURPLE}Press Enter to return to menu...{RESET}")
+
+
+def cbr_pc_brom_full_flash():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(f"{PURPLE}=================================================={RESET}")
+    print(f"{HACKER_GREEN}{BOLD}   💻 PC BROM FULL FLASH (REDMI/INFINIX) 💻   {RESET}")
+    print(f"{PURPLE}=================================================={RESET}\n")
+    if not verify_brom_auth(): return
+
+    print(f"{CYAN}--- Select Device Brand ---{RESET}")
+    print(f"{GREEN} [1]{RESET} Redmi / Xiaomi")
+    print(f"{GREEN} [2]{RESET} Infinix / Other MTK")
+    brand_choice = input(f"\n{BOLD}{ORANGE}👉 Select Option [1/2]: {RESET}").strip()
+
+    bl_choice = None
+    if brand_choice == '1':
+        print(f"\n{CYAN}--- Redmi Bootloader Option ---{RESET}")
+        print(f"{GREEN} [1]{RESET} Keep Bootloader Unlocked")
+        print(f"{RED} [2]{RESET} Lock Bootloader")
+        bl_choice = input(f"\n{BOLD}{ORANGE}👉 Select Option [1/2]: {RESET}").strip()
+
+    all_roms = cbr_smart_scanner(mode="mtk")
+    if not all_roms: return
+    
+    for i, file in enumerate(all_roms):
+        print(f" [{i+1}] {'[DIR]' if os.path.isdir(file) else '[ZIP]'} {os.path.basename(file)}")
+        
+    try:
+        sel = int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number: {RESET}").strip())
+        selected_rom = all_roms[sel-1]
+    except (ValueError, IndexError):
+        print(f"{RED}[!] Invalid selection.{RESET}")
+        return
+        
+    extract_folder = selected_rom
+    if not os.path.isdir(selected_rom):
+        extract_folder = os.path.join(os.path.dirname(selected_rom), "CBR_Extracted_MTK")
+        if not extract_safe_zip(selected_rom, extract_folder): return
+
+    scatter_path = None
+    for root, dirs, files in os.walk(extract_folder):
+        for f in files:
+            if "scatter" in f.lower() and f.endswith(".txt"):
+                scatter_path = os.path.join(root, f); break
+        if scatter_path: break
+        
+    if not scatter_path: 
+        print(f"{RED}[!] Scatter file not found!{RESET}")
+        input(f"\n{PURPLE}Press Enter...{RESET}")
+        return
+    sc_dir = os.path.dirname(scatter_path)
+
+    print(f"\n{CYAN}[BROM-INIT]{RESET} Initializing PyUSB & MTK DA Core...")
+    if not get_brom_device_info(): return
+
+    print(f"\n{ORANGE}[FULL FLASH]{RESET} Parsing scatter & writing ALL partitions...")
+    
+    part_files = {}
+    try:
+        with open(scatter_path, 'r', encoding='utf-8', errors='ignore') as sf:
+            for blk in sf.read().split("partition_index:")[1:]:
+                p_name_m = re.search(r"partition_name:\s*([^\s\r\n]+)", blk)
+                f_name_m = re.search(r"file_name:\s*([^\s\r\n]+)", blk)
+                is_dl_m = re.search(r"is_download:\s*([^\s\r\n]+)", blk)
+                if p_name_m and f_name_m:
+                    p = p_name_m.group(1).strip().strip('"\'')
+                    f = f_name_m.group(1).strip().strip('"\'')
+                    is_dl = is_dl_m.group(1).strip().lower() if is_dl_m else "true"
+                    if is_dl == "true" and f.lower() != "none" and f.strip():
+                        if os.path.exists(os.path.join(sc_dir, f)):
+                            part_files[p.lower()] = f
+    except Exception as e:
+        print(f"{RED}[!] Scatter parse error: {e}{RESET}")
+
+    if not part_files:
+        print(f"{RED}[!] No valid files found to flash!{RESET}")
+        return
+
+    parts_to_write = []
+    files_to_write = []
+    preloader_file = ""
+
+    for p_name, f_name in part_files.items():
+        parts_to_write.append(p_name)
+        files_to_write.append(f_name)
+        if p_name in ["preloader", "preloader_a"]: 
+            preloader_file = f_name
+
+    parts_str = ",".join(parts_to_write)
+    files_str = ",".join(files_to_write)
+    
+    cmd_args = ["w", parts_str, files_str]
+    if preloader_file:
+        cmd_args.extend(["--preloader", preloader_file])
+    
+    print(f"{CYAN}   >> Preparing to write {len(parts_to_write)} partitions in ONE High-Speed Pass... Do NOT disconnect!{RESET}")
+    
+    ret_code = execute_mtk_cmd(cmd_args, sc_dir)
+    if ret_code != 0:
+        print(f"{RED}   [!] FATAL ERROR during Full Flash. Read the output above.{RESET}")
+        input(f"\n{PURPLE}Press Enter to return...{RESET}")
+        return
+    
+    if brand_choice == '1' and bl_choice:
+        print(f"\n{CYAN}[BOOTLOADER]{RESET} Applying Bootloader Settings for Redmi...")
+        if bl_choice == '1':
+            execute_mtk_cmd(["da", "seccfg", "unlock"], sc_dir)
+        elif bl_choice == '2':
+            execute_mtk_cmd(["da", "seccfg", "lock"], sc_dir)
+        print(f"{GREEN}   [✓] Bootloader configuration applied!{RESET}")
+
+    print(f"\n{CYAN}[BROM-REBOOT]{RESET} Sending real hardware reset sequence...")
+    execute_mtk_cmd(["reset"], sc_dir)
+    time.sleep(2)
+    print(f"{GREEN}[✓] PC BROM Full Flash Completed Successfully! Phone is Auto-Rebooting!{RESET}")
+    send_activity_log("Used PC BROM Full Flash Engine")
+    input(f"\n{PURPLE}Press Enter to return to menu...{RESET}")
+
 def cbr_smart_flasher():
     import requests
     if not IS_WINDOWS:
@@ -700,44 +1017,11 @@ def cbr_smart_flasher():
     time.sleep(1)
 
     rom_dir = "/sdcard/Download" if not IS_WINDOWS else os.path.expanduser("~\\Downloads")
-    print(f"\n{CYAN}[SCANNING]{RESET} Searching for ROM Zips & Unzipped Folders in {rom_dir}...")
-    
-    if not os.path.exists(rom_dir):
-        print(f"{RED}[!] Directory not found. Please check paths.{RESET}")
-        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
-        return
+    all_roms = cbr_smart_scanner(mode="fastboot")
+    if not all_roms: return
         
-    rom_archives = glob.glob(f"{rom_dir}/*.tgz") + glob.glob(f"{rom_dir}/*.zip") + glob.glob(f"{rom_dir}/*.tar.gz")
-    rom_folders = []
-    
-    try:
-        for item in os.listdir(rom_dir):
-            item_path = os.path.join(rom_dir, item)
-            if os.path.isdir(item_path):
-                if os.path.exists(os.path.join(item_path, "flash_all.sh")) or os.path.exists(os.path.join(item_path, "flash_all.bat")):
-                    rom_folders.append(item_path)
-                else:
-                    for sub in os.listdir(item_path):
-                        sub_path = os.path.join(item_path, sub)
-                        if os.path.isdir(sub_path):
-                            if os.path.exists(os.path.join(sub_path, "flash_all.sh")) or os.path.exists(os.path.join(sub_path, "flash_all.bat")):
-                                rom_folders.append(sub_path)
-    except:
-        pass
-        
-    all_roms = list(set(rom_folders)) + rom_archives
-    
-    if not all_roms:
-        print(f"{ORANGE}[!] No valid ROMs (Zips or Unzipped Folders) found in {rom_dir}.{RESET}")
-        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
-        return
-        
-    print(f"\n{GREEN}--- Found ROM Files ---{RESET}")
     for i, file in enumerate(all_roms):
-        if os.path.isdir(file):
-            print(f" [{i+1}] {BOLD}{CYAN}[DIR]{RESET} {os.path.basename(file)}")
-        else:
-            print(f" [{i+1}] {BOLD}{ORANGE}[ZIP]{RESET} {os.path.basename(file)}")
+        print(f" [{i+1}] {'[DIR]' if os.path.isdir(file) else '[ZIP]'} {os.path.basename(file)}")
         
     try:
         sel = int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number to Extract/Flash: {RESET}").strip())
@@ -747,90 +1031,21 @@ def cbr_smart_flasher():
         if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
-    if os.path.isdir(selected_rom):
-        print(f"\n{CYAN}[SMART DETECT]{RESET} Pre-unzipped folder detected! Skipping extraction... 🚀")
-        extract_folder = selected_rom
-    else:
+    extract_folder = selected_rom
+    if not os.path.isdir(selected_rom):
         extract_folder = os.path.join(rom_dir, "CBR_Extracted_ROM")
-        print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
-        print(f"{DIM}Please wait, calculating total size...{RESET}\n")
-        
-        try:
-            if os.path.exists(extract_folder):
-                shutil.rmtree(extract_folder)
-            os.makedirs(extract_folder)
-            
-            if selected_rom.endswith('.zip'):
-                with zipfile.ZipFile(selected_rom, 'r') as zf:
-                    infos = zf.infolist()
-                    total_size = sum(info.file_size for info in infos)
-                    extracted_size = 0
-                    for info in infos:
-                        target_path = os.path.join(extract_folder, info.filename)
-                        if info.is_dir() or info.filename.endswith('/'):
-                            os.makedirs(target_path, exist_ok=True)
-                            continue
-                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                        if os.path.isdir(target_path): continue
-                        
-                        with zf.open(info) as source, open(target_path, 'wb') as target:
-                            while True:
-                                chunk = source.read(1024 * 1024) 
-                                if not chunk: break
-                                target.write(chunk)
-                                extracted_size += len(chunk)
-                                percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
-                                mb_ex = extracted_size / (1024 * 1024)
-                                mb_tot = total_size / (1024 * 1024)
-                                sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
-                                sys.stdout.flush()
-            else:
-                with tarfile.open(selected_rom, 'r:*') as tf:
-                    members = tf.getmembers()
-                    total_size = sum(m.size for m in members)
-                    extracted_size = 0
-                    for m in members:
-                        target_path = os.path.join(extract_folder, m.name)
-                        if m.isdir() or m.name.endswith('/'):
-                            os.makedirs(target_path, exist_ok=True)
-                            continue
-                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                        if os.path.isdir(target_path): continue
-                        
-                        f = tf.extractfile(m)
-                        if f:
-                            with open(target_path, 'wb') as target:
-                                while True:
-                                    chunk = f.read(1024 * 1024) 
-                                    if not chunk: break
-                                    target.write(chunk)
-                                    extracted_size += len(chunk)
-                                    percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
-                                    mb_ex = extracted_size / (1024 * 1024)
-                                    mb_tot = total_size / (1024 * 1024)
-                                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
-                                    sys.stdout.flush()
-                        
-            print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
-        except Exception as e:
-            print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
-            if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
-            return
+        if not extract_safe_zip(selected_rom, extract_folder): return
 
     sh_file = None
     for root, dirs, files in os.walk(extract_folder):
-        if IS_WINDOWS and "flash_all.bat" in files:
-            sh_file = os.path.join(root, "flash_all.bat")
-            break
-        elif not IS_WINDOWS and "flash_all.sh" in files:
-            sh_file = os.path.join(root, "flash_all.sh")
-            break
-        elif "flash_all.sh" in files:
-            sh_file = os.path.join(root, "flash_all.sh")
-            break
-        elif "flash_all.bat" in files:
-            sh_file = os.path.join(root, "flash_all.bat")
-            break
+        for f in files:
+            if IS_WINDOWS and f.lower() == "flash_all.bat": sh_file = os.path.join(root, f)
+            elif not IS_WINDOWS and f.lower() == "flash_all.sh": sh_file = os.path.join(root, f)
+        if not sh_file:
+            for f in files:
+                if f.lower() == "flash_all.sh" or f.lower() == "flash_all.bat":
+                    sh_file = os.path.join(root, f)
+        if sh_file: break
             
     if not sh_file:
         print(f"{RED}[!] Error: 'flash_all' script not found in extracted files! Invalid ROM.{RESET}")
@@ -842,7 +1057,7 @@ def cbr_smart_flasher():
     print(f"\n{CYAN}[PRE-CHECK]{RESET} Verifying Device Connection...")
     connected_device = get_device_info()
     if not connected_device:
-        print(f"{RED}[!] Phone not found in fastboot or error reading device info.{RESET}")
+        print(f"{RED}[!] Phone not found in fastboot.{RESET}")
         if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
         
@@ -879,7 +1094,6 @@ def cbr_smart_flasher():
                     is_valid_action = True
                     
             if not is_valid_action:
-                print(f"{ORANGE}[BYPASS]{RESET} {DIM}Skipping script logic/check: {line}{RESET}")
                 continue
             
             if fb_bin != "fastboot" and cmd.startswith("fastboot "):
@@ -891,16 +1105,6 @@ def cbr_smart_flasher():
                 
                 process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
                 for out_line in process.stdout:
-                    line_lower = out_line.lower()
-                    if "error" in line_lower or "failed" in line_lower:
-                        if "locked" in line_lower or "not allowed" in line_lower:
-                            print(f"{RED}   [DIAGNOSTIC] Bootloader is Locked! Please unlock first.{RESET}")
-                        elif "anti-rollback" in line_lower or "anti rollback" in line_lower:
-                            print(f"{RED}   [DIAGNOSTIC] Anti-Rollback triggered! You are downgrading.{RESET}")
-                        elif "not found" in line_lower and "partition" in line_lower:
-                            print(f"{ORANGE}   [DIAGNOSTIC] Partition missing on device. Skipping safely.{RESET}")
-                        elif "protocol" in line_lower or "connection" in line_lower or "timeout" in line_lower:
-                            print(f"{RED}   [DIAGNOSTIC] USB Connection Dropped! Check Cable.{RESET}")
                     print(f"{DIM}   >> {out_line.strip()}{RESET}")
                 process.wait()
                 
@@ -931,13 +1135,9 @@ def cbr_smart_flasher():
     send_activity_log("Successfully Completed ROM Flashing")
     if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
 
-# ==========================================
-# 🚀 NEW: CBR INFINIX STOCK ROM FLASHER 🚀
-# ==========================================
 def cbr_infinix_flasher():
     global ACTIVE_USB_DEV, GRANTED_USB_DEVS
     import requests
-    import re
     if not IS_WINDOWS: os.system("termux-wake-lock > /dev/null 2>&1")
     
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -957,62 +1157,14 @@ def cbr_infinix_flasher():
         return
         
     print(f"{GREEN}[✓] Access Granted! Loading CBR Infinix Flasher Engine...{RESET}")
-    if IS_WINDOWS:
-        print(f"{CYAN}[SYSTEM]{RESET} Verifying PC FastbootD Core Drivers... {GREEN}OK!{RESET}")
-    else:
-        print(f"{CYAN}[SYSTEM]{RESET} Verifying OTG/FastbootD Core Drivers... {GREEN}OK!{RESET}")
-        print(f"{CYAN}[SHIELD]{RESET} Termux Wake-Lock Enabled. Device won't sleep! {GREEN}OK!{RESET}")
-    send_activity_log("Opened CBR Infinix Stock ROM Flasher")
     time.sleep(1)
 
     rom_dir = "/sdcard/Download" if not IS_WINDOWS else os.path.expanduser("~\\Downloads")
-    print(f"\n{CYAN}[SCANNING]{RESET} Searching for Infinix ROM Zips & Scatter Folders in {rom_dir}...")
-    
-    if not os.path.exists(rom_dir):
-        print(f"{RED}[!] Directory not found. Please check paths.{RESET}")
-        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
-        return
+    all_roms = cbr_smart_scanner(mode="mtk")
+    if not all_roms: return
         
-    rom_archives = glob.glob(f"{rom_dir}/*.zip") + glob.glob(f"{rom_dir}/*.tgz") + glob.glob(f"{rom_dir}/*.tar.gz")
-    rom_folders = []
-    
-    def is_infinix_rom_dir(d_path):
-        try:
-            files_in_dir = os.listdir(d_path)
-            for f_name in files_in_dir:
-                if "scatter" in f_name.lower() or f_name.lower() == "super.img":
-                    return True
-        except:
-            pass
-        return False
-
-    try:
-        for item in os.listdir(rom_dir):
-            item_path = os.path.join(rom_dir, item)
-            if os.path.isdir(item_path):
-                if is_infinix_rom_dir(item_path):
-                    rom_folders.append(item_path)
-                else:
-                    for sub in os.listdir(item_path):
-                        sub_path = os.path.join(item_path, sub)
-                        if os.path.isdir(sub_path) and is_infinix_rom_dir(sub_path):
-                            rom_folders.append(sub_path)
-    except:
-        pass
-        
-    all_roms = list(set(rom_folders)) + rom_archives
-    
-    if not all_roms:
-        print(f"{ORANGE}[!] No valid Infinix ROMs (Zips or Scatter Folders) found in {rom_dir}.{RESET}")
-        if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
-        return
-        
-    print(f"\n{GREEN}--- Found Infinix ROM Files ---{RESET}")
     for i, file in enumerate(all_roms):
-        if os.path.isdir(file):
-            print(f" [{i+1}] {BOLD}{CYAN}[DIR]{RESET} {os.path.basename(file)}")
-        else:
-            print(f" [{i+1}] {BOLD}{ORANGE}[ZIP]{RESET} {os.path.basename(file)}")
+        print(f" [{i+1}] {'[DIR]' if os.path.isdir(file) else '[ZIP]'} {os.path.basename(file)}")
         
     try:
         sel = int(input(f"\n{BOLD}{ORANGE}👉 Select ROM number to Extract/Flash: {RESET}").strip())
@@ -1022,103 +1174,29 @@ def cbr_infinix_flasher():
         if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
-    if os.path.isdir(selected_rom):
-        print(f"\n{CYAN}[SMART DETECT]{RESET} Pre-unzipped Infinix folder detected! Skipping extraction... 🚀")
-        extract_folder = selected_rom
-    else:
+    extract_folder = selected_rom
+    if not os.path.isdir(selected_rom):
         extract_folder = os.path.join(rom_dir, "CBR_Extracted_Infinix_ROM")
-        print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(selected_rom)}...")
-        print(f"{DIM}Please wait, calculating total size...{RESET}\n")
-        
-        try:
-            if os.path.exists(extract_folder):
-                shutil.rmtree(extract_folder)
-            os.makedirs(extract_folder)
-            
-            if selected_rom.endswith('.zip'):
-                with zipfile.ZipFile(selected_rom, 'r') as zf:
-                    infos = zf.infolist()
-                    total_size = sum(info.file_size for info in infos)
-                    extracted_size = 0
-                    for info in infos:
-                        target_path = os.path.join(extract_folder, info.filename)
-                        if info.is_dir() or info.filename.endswith('/'):
-                            os.makedirs(target_path, exist_ok=True)
-                            continue
-                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                        if os.path.isdir(target_path): continue
-                        with zf.open(info) as source, open(target_path, 'wb') as target:
-                            while True:
-                                chunk = source.read(1024 * 1024) 
-                                if not chunk: break
-                                target.write(chunk)
-                                extracted_size += len(chunk)
-                                percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
-                                mb_ex = extracted_size / (1024 * 1024)
-                                mb_tot = total_size / (1024 * 1024)
-                                sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
-                                sys.stdout.flush()
-            else:
-                with tarfile.open(selected_rom, 'r:*') as tf:
-                    members = tf.getmembers()
-                    total_size = sum(m.size for m in members)
-                    extracted_size = 0
-                    for m in members:
-                        target_path = os.path.join(extract_folder, m.name)
-                        if m.isdir() or m.name.endswith('/'):
-                            os.makedirs(target_path, exist_ok=True)
-                            continue
-                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                        if os.path.isdir(target_path): continue
-                        f = tf.extractfile(m)
-                        if f:
-                            with open(target_path, 'wb') as target:
-                                while True:
-                                    chunk = f.read(1024 * 1024) 
-                                    if not chunk: break
-                                    target.write(chunk)
-                                    extracted_size += len(chunk)
-                                    percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
-                                    mb_ex = extracted_size / (1024 * 1024)
-                                    mb_tot = total_size / (1024 * 1024)
-                                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
-                                    sys.stdout.flush()
-            print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
-        except Exception as e:
-            print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
-            if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
-            return
+        if not extract_safe_zip(selected_rom, extract_folder): return
 
-    rom_img_dir = None
     scatter_found = None
     scatter_full_path = None
+    rom_img_dir = None
     for root, dirs, files in os.walk(extract_folder):
-        for f_name in sorted(files):
-            if "scatter" in f_name.lower() and f_name.endswith(".txt"):
-                scatter_found = f_name
-                scatter_full_path = os.path.join(root, f_name)
+        for f in files:
+            if "scatter" in f.lower() and (f.endswith(".txt") or f.endswith(".xml")):
+                scatter_found = f
+                scatter_full_path = os.path.join(root, f)
                 rom_img_dir = root
                 break
-        if not scatter_found:
-            for f_name in sorted(files):
-                if "scatter" in f_name.lower() and f_name.endswith(".xml"):
-                    scatter_found = f_name
-                    scatter_full_path = os.path.join(root, f_name)
-                    rom_img_dir = root
-                    break
-        if not rom_img_dir:
-            for f_name in files:
-                if f_name.lower() == "super.img":
-                    rom_img_dir = root
-                    break
-        if rom_img_dir and scatter_found: break
+        if scatter_found: break
 
     if not rom_img_dir:
-        print(f"{RED}[!] Error: Scatter file or 'super.img' not found in ROM folder!{RESET}")
+        print(f"{RED}[!] Error: Scatter file not found in ROM folder!{RESET}")
         if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
-    if scatter_found: print(f"{GREEN}[✓] Detected Scatter File: {scatter_found}{RESET}")
+    print(f"{GREEN}[✓] Detected Scatter File: {scatter_found}{RESET}")
     print(f"{CYAN}[✓] ROM Image Directory Ready: {rom_img_dir}{RESET}")
 
     risky_blacklist = {
@@ -1136,7 +1214,7 @@ def cbr_infinix_flasher():
     for b_part, b_file in baseline_ab_partitions: scatter_ab_map[b_part] = b_file
 
     if scatter_full_path and os.path.exists(scatter_full_path):
-        print(f"\n{CYAN}[SCATTER PARSER]{RESET} Analyzing {scatter_found} for safe partitions & init_boot...")
+        print(f"\n{CYAN}[SCATTER PARSER]{RESET} Analyzing {scatter_found} for safe partitions...")
         try:
             with open(scatter_full_path, 'r', encoding='utf-8', errors='ignore') as sf: content = sf.read()
             parsed_entries = []
@@ -1163,12 +1241,12 @@ def cbr_infinix_flasher():
                 elif base_p in ("super", "userdata"): scatter_single_map[base_p] = f_name
                 else: scatter_ab_map[base_p] = f_name
         except Exception as e:
-            print(f"{ORANGE}[!] Scatter parse notice: {e}. Using verified partition list.{RESET}")
+            print(f"{ORANGE}[!] Scatter parse notice: {e}{RESET}")
 
     print(f"\n{CYAN}[PRE-CHECK]{RESET} Checking Fastboot / FastbootD Device Connection...")
     connected_device = get_device_info()
     if not connected_device:
-        print(f"{RED}[!] Phone not detected! Please connect phone in Fastboot/FastbootD mode via OTG.{RESET}")
+        print(f"{RED}[!] Phone not detected! Please connect via OTG.{RESET}")
         if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
         return
 
@@ -1186,40 +1264,32 @@ def cbr_infinix_flasher():
         pct_now = get_progress_pct()
         GRANTED_USB_DEVS.clear()
         
-        print(f"\n{CYAN}[*] Phone is switching/rebooting to {BOLD}{mode_label}{RESET} (Progress Saved: {BOLD}{GREEN}{pct_now}%{RESET})...")
+        print(f"\n{CYAN}[*] Switching to {BOLD}{mode_label}{RESET} (Saved: {BOLD}{GREEN}{pct_now}%{RESET})...")
         time.sleep(4)
         while True:
             trigger_otg_popup(silent=False, force=True)
             fb_bin = get_fastboot_bin()
             dev_out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=4)
             if dev_out and "permission" not in dev_out.lower():
-                print(f"\n{GREEN}[✓] Device Connected in {mode_label}! Resuming from {pct_now}%... 🚀{RESET}")
+                print(f"\n{GREEN}[✓] Device Connected! Resuming... 🚀{RESET}")
                 return True
             if not IS_WINDOWS and ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS:
-                print(f"\n{GREEN}[✓] OTG Port Authorized in {mode_label}! Resuming from {pct_now}%... 🚀{RESET}")
+                print(f"\n{GREEN}[✓] OTG Authorized! Resuming... 🚀{RESET}")
                 return True
 
             print(f"\n{PURPLE}=================================================={RESET}")
-            print(f"{ORANGE}{BOLD} ⚠️  DEVICE DISCONNECTED / WAITING FOR {mode_label.upper()} ⚠️{RESET}")
-            print(f"{CYAN} 📊 Saved Progress : {BOLD}{GREEN}{pct_now}% Completed{RESET} (Will resume from next step)")
-            print(f"{PURPLE}=================================================={RESET}")
-            print(f"{GREEN} [1]{RESET} 🔄 Try Connect & Resume")
-            print(f"{RED} [2]{RESET} ❌ Exit (Cancel Flashing)")
-            rec_choice = input(f"\n{BOLD}{ORANGE}👉 Select Option [1/2]: {RESET}").strip()
-            
-            if rec_choice == '2':
-                print(f"\n{RED}[!] Flashing cancelled by user at {pct_now}%. Returning to menu...{RESET}")
-                user_aborted_flash = True
-                return False
-            else:
-                GRANTED_USB_DEVS.clear()
-                for retry_i in range(1, 4):
-                    trigger_otg_popup(silent=False, force=True)
-                    dev_out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=4)
-                    if dev_out and "permission" not in dev_out.lower(): return True
-                    if not IS_WINDOWS and ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS: return True
-                    print(f"{ORANGE}   >> Checking connection ({retry_i}/3)...{RESET}")
-                    time.sleep(2)
+            print(f"{ORANGE}{BOLD} ⚠️  WAITING FOR {mode_label.upper()} ⚠️{RESET}")
+            print(f"{GREEN} [1]{RESET} 🔄 Try Connect & Resume  {RED}[2]{RESET} ❌ Exit")
+            if input(f"\n{BOLD}{ORANGE}👉 Select [1/2]: {RESET}").strip() == '2':
+                user_aborted_flash = True; return False
+            GRANTED_USB_DEVS.clear()
+            for retry_i in range(1, 4):
+                trigger_otg_popup(silent=False, force=True)
+                dev_out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=4)
+                if dev_out and "permission" not in dev_out.lower(): return True
+                if not IS_WINDOWS and ACTIVE_USB_DEV and ACTIVE_USB_DEV in GRANTED_USB_DEVS: return True
+                print(f"{ORANGE}   >> Checking connection ({retry_i}/3)...{RESET}")
+                time.sleep(2)
 
     def is_device_in_fastbootd():
         nonlocal fb_bin
@@ -1251,14 +1321,12 @@ def cbr_infinix_flasher():
                     output_lines.append(out_line)
                     line_lower = out_line.lower()
                     print(f"{DIM}   >> {out_line.strip()}{RESET}")
-                    if "waiting for any device" in line_lower or "< waiting for" in line_lower:
+                    if "waiting for any device" in line_lower or "< waiting for" in line_lower or "no such device" in line_lower:
                         saw_waiting_for_device = True
                         try: process.terminate(); time.sleep(0.3); process.kill()
                         except: pass
                         break
-                    if "no such device" in line_lower or "status read failed" in line_lower or "cannot read" in line_lower:
-                        saw_waiting_for_device = True
-                    if is_reboot_cmd and ("okay" in line_lower or "rebooting" in line_lower and "okay" in "".join(output_lines).lower()):
+                    if is_reboot_cmd and ("okay" in line_lower or "rebooting" in line_lower):
                         reboot_okay_seen = True
                         try: process.terminate()
                         except: pass
@@ -1273,15 +1341,11 @@ def cbr_infinix_flasher():
                     success = True; break
 
                 if not IS_WINDOWS and process.returncode != 0 and not saw_waiting_for_device and ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
-                    print(f"{CYAN}   [USB-BRIDGE]{RESET} Routing command directly via {ACTIVE_USB_DEV}...")
                     bridge_proc = subprocess.Popen(["termux-usb", "-e", cmd_str, ACTIVE_USB_DEV], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
                     for b_line in bridge_proc.stdout:
                         print(f"{DIM}   >> {b_line.strip()}{RESET}")
-                        if "waiting for any device" in b_line.lower() or "no such device" in b_line.lower():
-                            saw_waiting_for_device = True
-                            try: bridge_proc.kill()
-                            except: pass
-                            break
+                        if "waiting" in b_line.lower() or "no such device" in b_line.lower():
+                            saw_waiting_for_device = True; break
                     try: bridge_proc.wait(timeout=3)
                     except: pass
                     if bridge_proc.returncode == 0 and not saw_waiting_for_device: process.returncode = 0
@@ -1290,10 +1354,8 @@ def cbr_infinix_flasher():
                     success = True; break
                 else:
                     if allow_skip and attempt == 0 and not saw_waiting_for_device:
-                        print(f"{ORANGE}[!] Optional step returned non-zero, safely continuing...{RESET}")
                         success = True; break
                     if saw_waiting_for_device:
-                        print(f"{RED}[!] Device disconnected at {pct_now}%! Opening Menu...{RESET}")
                         if not wait_for_fastboot_device("Active Fastboot Mode"): return False
                         continue
                     time.sleep(2)
@@ -1314,29 +1376,20 @@ def cbr_infinix_flasher():
     print(f"\n{HACKER_GREEN}=================================================={RESET}")
     print(f"{HACKER_GREEN}{BOLD}   🚀 STARTING SERIAL INFINIX FLASH SEQUENCE 🚀   {RESET}")
     print(f"{HACKER_GREEN}=================================================={RESET}")
-    send_activity_log(f"Started Infinix ROM Flash: {os.path.basename(selected_rom)}")
-
+    
     print(f"\n{CYAN}{BOLD}>>> STAGE 1: FASTBOOTD MODE OPERATIONS <<<{RESET}")
-    if is_device_in_fastbootd(): print(f"{GREEN}[✓] Phone is already in FastbootD Mode!{RESET}")
-    else:
+    if not is_device_in_fastbootd():
         execute_single_fastboot_cmd("fastboot reboot fastboot", "STEP 2-A", is_reboot_cmd=True)
         if not wait_for_fastboot_device("FastbootD Mode") or user_aborted_flash: return
 
     execute_single_fastboot_cmd("fastboot delete-logical-partition product", "STEP 2-B", allow_skip=True)
     execute_single_fastboot_cmd("fastboot erase system", "STEP 2-C", allow_skip=True)
-    execute_single_fastboot_cmd("fastboot delete-logical-partition system_ext", "STEP 2-C1", allow_skip=True)
-    execute_single_fastboot_cmd("fastboot delete-logical-partition system_ext_a", "STEP 2-C2", allow_skip=True)
-    execute_single_fastboot_cmd("fastboot delete-logical-partition system_ext_b", "STEP 2-C3", allow_skip=True)
-    execute_single_fastboot_cmd("fastboot delete-logical-partition product", "STEP 2-C4", allow_skip=True)
-    execute_single_fastboot_cmd("fastboot delete-logical-partition product_a", "STEP 2-C5", allow_skip=True)
-    execute_single_fastboot_cmd("fastboot delete-logical-partition product_b", "STEP 2-C6", allow_skip=True)
     
     super_flags = "" if IS_WINDOWS else "-S 64M"
     flash_partition_file("super", scatter_single_map.get("super", "super.img"), "STEP 2-D", extra_flags=super_flags)
-    
     execute_single_fastboot_cmd("fastboot -w", "STEP 2-E", allow_skip=True)
+    
     if user_aborted_flash: return
-
     print(f"\n{CYAN}{BOLD}>>> STAGE 2: BOOTLOADER MODE FLASHING <<<{RESET}")
     execute_single_fastboot_cmd("fastboot reboot bootloader", "BOOTLOADER-SWITCH", is_reboot_cmd=True)
     if not wait_for_fastboot_device("Bootloader Mode") or user_aborted_flash: return
@@ -1361,104 +1414,7 @@ def cbr_infinix_flasher():
     print(f"\n{CYAN}{BOLD}>>> STAGE 4: REBOOTING TO RECOVERY <<<{RESET}")
     execute_single_fastboot_cmd("fastboot reboot recovery", "FINAL-RECOVERY-BOOT", allow_skip=True, is_reboot_cmd=True)
     print(f"\n{GREEN}{BOLD}[✓] INFINIX FLASHING COMPLETED 100% SUCCESSFULLY!{RESET}")
-    send_activity_log("Successfully Completed Infinix ROM Flashing")
     if not IS_WINDOWS: os.system("termux-wake-unlock > /dev/null 2>&1")
-
-# ==========================================
-# 🚀 NEW: THE ULTIMATE BROM ENGINE (MTK BYPASS) 🚀
-# ==========================================
-def verify_brom_auth():
-    print(f"{CYAN}[SECURITY]{RESET} Connecting to Cloud Authorization for BROM Engine...")
-    live_password = get_cloud_setting('brom_password', 'OwnerHasib')
-        
-    auth_pass = input(f"{BOLD}{ORANGE}🔑 Enter BROM Access Password: {RESET}").strip()
-    if auth_pass != live_password:
-        print(f"\n{RED}[✗] Access Denied: Incorrect BROM Password!{RESET}")
-        send_activity_log("Failed BROM Access Attempt")
-        time.sleep(2)
-        return False
-    print(f"{GREEN}[✓] Access Granted! Loading BROM Core...{RESET}")
-    return True
-
-def cbr_brom_test():
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print(f"{PURPLE}=================================================={RESET}")
-    print(f"{HACKER_GREEN}{BOLD}    🧪 BROM MODE TEST ANY (MTK CONNECTION) 🧪    {RESET}")
-    print(f"{PURPLE}=================================================={RESET}\n")
-    if not verify_brom_auth(): return
-    if get_brom_device_info():
-        print(f"\n{CYAN}[BROM-SYNC]{RESET} Sending Handshake Sequence to MTK CPU...")
-        time.sleep(1.5)
-        print(f"{GREEN}[✓] Successfully Brom mode connected & Auth Bypassed! ✅{RESET}")
-        print(f"{DIM}    Hardware ID Read Success! Phone is safe to Flash.{RESET}")
-    input(f"\n{PURPLE}Press Enter to return to menu...{RESET}")
-
-def parse_scatter_for_brom(rom_dir):
-    all_roms = glob.glob(f"{rom_dir}/**/*.txt", recursive=True)
-    scatter_files = [f for f in all_roms if "scatter" in os.path.basename(f).lower()]
-    if not scatter_files: return None, None
-    print(f"\n{CYAN}[BROM-SCAN]{RESET} Found following MTK Scatters in {rom_dir}:")
-    for i, sc in enumerate(scatter_files): print(f" [{i+1}] {os.path.basename(os.path.dirname(sc))}/{os.path.basename(sc)}")
-    try:
-        sel = int(input(f"\n{BOLD}{ORANGE}👉 Select Scatter Number: {RESET}").strip())
-        scatter_path = scatter_files[sel-1]
-        base_dir = os.path.dirname(scatter_path)
-        print(f"{GREEN}[✓] Selected: {os.path.basename(scatter_path)}{RESET}")
-        return scatter_path, base_dir
-    except: return None, None
-
-def cbr_brom_dead_to_fastboot():
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print(f"{PURPLE}=================================================={RESET}")
-    print(f"{HACKER_GREEN}{BOLD}    🪦 DEAD -> GO FASTBOOT (SURGICAL FLASH) 🪦    {RESET}")
-    print(f"{PURPLE}=================================================={RESET}\n")
-    if not verify_brom_auth(): return
-    
-    rom_dir = "/sdcard/Download" if not IS_WINDOWS else os.path.expanduser("~\\Downloads")
-    sc_path, sc_dir = parse_scatter_for_brom(rom_dir)
-    if not sc_path: 
-        print(f"{RED}[!] Scatter selection failed!{RESET}")
-        input(f"\n{PURPLE}Press Enter...{RESET}")
-        return
-        
-    print(f"\n{CYAN}[BROM-INIT]{RESET} Initializing PyUSB & MTK DA Core...")
-    if not get_brom_device_info(): return
-    
-    print(f"\n{ORANGE}[SURGICAL FLASH]{RESET} Loading real DA Payload and writing partitions...")
-    
-    part_files = {}
-    for f in os.listdir(sc_dir):
-        f_low = f.lower()
-        if f_low.startswith("preloader") and f_low.endswith(".bin"): part_files["preloader"] = os.path.join(sc_dir, f)
-        elif f_low == "lk.img": part_files["lk"] = os.path.join(sc_dir, f)
-        elif f_low == "tee.img": part_files["tee"] = os.path.join(sc_dir, f)
-        elif f_low == "boot.img": part_files["boot"] = os.path.join(sc_dir, f)
-
-    mtk_cmd_base = [sys.executable, "-m", "mtkclient"]
-    targets = ["preloader", "lk", "tee", "boot"]
-    
-    for t in targets:
-        if t in part_files:
-            print(f"{CYAN}   >> Writing '{t}' from {os.path.basename(part_files[t])}...{RESET}")
-            try:
-                if t == "preloader":
-                    cmd = mtk_cmd_base + ["w", "preloader", f'"{part_files[t]}"', "--preloader", f'"{part_files[t]}"']
-                else:
-                    cmd = mtk_cmd_base + ["w", t, f'"{part_files[t]}"']
-                subprocess.run(" ".join(cmd), shell=True, capture_output=True, text=True)
-                print(f"{GREEN}   [✓] Wrote '{t}' successfully via Real BROM Payload.{RESET}")
-            except Exception as e:
-                print(f"{RED}   [!] Failed to write {t}: {e}{RESET}")
-        else:
-            print(f"{ORANGE}   [!] File for '{t}' not found in scatter folder. Skipping.{RESET}")
-        time.sleep(0.5)
-        
-    print(f"\n{CYAN}[BROM-REBOOT]{RESET} Sending real hardware reset sequence...")
-    subprocess.run(f"{sys.executable} -m mtkclient reset", shell=True, capture_output=True, text=True)
-    time.sleep(2)
-    print(f"{GREEN}[✓] Magic Done! Phone is now forced to wake up in Fastboot Mode!{RESET}")
-    send_activity_log("Used Real BROM Dead -> Go Fastboot Engine")
-    input(f"\n{PURPLE}Press Enter to return to menu...{RESET}")
 
 def cbr_brom_dead_to_flash():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -1479,9 +1435,7 @@ def admin_panel():
     print(f"{PURPLE}=================================================={RESET}")
     print(f"{RED}{BOLD}        🔐 ADMIN CONTROL DASHBOARD 🔐        {RESET}")
     print(f"{PURPLE}=================================================={RESET}\n")
-    
     if not verify_admin_access(): return
-
     import requests
     base_url = "https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users"
     
@@ -1497,29 +1451,19 @@ def admin_panel():
         print(f"{RED} [0]{RESET} Back to Main Menu")
         
         admin_opt = input(f"\n{BOLD}{ORANGE}👉 Select Action: {RESET}").strip()
-        
         if admin_opt == '0': break
         elif admin_opt in ['4', '5', '6', '7', '8']:
-            key_map = {
-                '4': ('tool_password', 'Tool Opening Password'),
-                '5': ('flash_password', 'Redmi Flash Password'),
-                '6': ('infinix_password', 'Infinix Flash Password'),
-                '7': ('brom_password', 'BROM Access Password'),
-                '8': ('admin_password', 'Admin/Owner Password')
-            }
+            key_map = {'4': ('tool_password', 'Tool Opening Password'), '5': ('flash_password', 'Redmi Flash Password'), '6': ('infinix_password', 'Infinix Flash Password'), '7': ('brom_password', 'BROM Access Password'), '8': ('admin_password', 'Admin/Owner Password')}
             key_name, display_name = key_map[admin_opt]
             curr_pass = get_cloud_setting(key_name, 'Not Set (Using Default/Hash)')
             print(f"\n{DIM}Current {display_name}: {curr_pass}{RESET}")
-            
             new_pass = input(f"{BOLD}{ORANGE}👉 Enter New Password (or press enter to cancel): {RESET}").strip()
             if new_pass:
                 try:
                     requests.patch(SETTINGS_URL, json={key_name: new_pass}, timeout=10)
                     print(f"{GREEN}[✓] {display_name} Successfully Updated to Cloud!{RESET}")
-                except Exception as e: 
-                    print(f"{RED}[!] Error: {e}{RESET}")
+                except Exception as e: print(f"{RED}[!] Error: {e}{RESET}")
             input(f"\n{PURPLE}Press Enter...{RESET}")
-            
         elif admin_opt == '1':
             try:
                 users_data = requests.get(f"{base_url}.json?auth={FIREBASE_SECRET}", timeout=10).json()
@@ -1567,10 +1511,11 @@ def main_menu():
         print(f"{ORANGE} [7]{RESET} 🧪 Brom Mode Test Any")
         print(f"{ORANGE} [8]{RESET} 🪦 Only Dead -> Go Fastboot")
         print(f"{ORANGE} [9]{RESET} 🪦 Dead Go Fastboot Flash Combo")
+        print(f"{HACKER_GREEN} [10]{RESET} {BOLD}💻 BROM Full Flash (Redmi/Infinix){RESET}")
         print(f"{RED} [99]{RESET} {BOLD}Admin Control Panel{RESET}")
         print(f"{CYAN} [0]{RESET} Exit")
         
-        choice = input(f"\n{BOLD}{ORANGE}👉 Select an option: {RESET}").strip()
+        choice = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
         
         if choice == '1': bootloader_unlock_tool(); input(f"\n{PURPLE}Press Enter...{RESET}")
         elif choice == '2': cbr_wifi_setup()
@@ -1580,6 +1525,7 @@ def main_menu():
         elif choice == '7': cbr_brom_test()
         elif choice == '8': cbr_brom_dead_to_fastboot()
         elif choice == '9': cbr_brom_dead_to_flash()
+        elif choice == '10': cbr_pc_brom_full_flash()
         elif choice == '99': admin_panel()
         elif choice == '0': sys.exit(0)
 
