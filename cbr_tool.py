@@ -478,9 +478,6 @@ def mi_unlock_logic():
         
     region = input(f"{BOLD}{ORANGE}👉{RESET} Enter Region (global/india/china) [global]: ").strip().lower()
     if not region: region = "global"
-
-    wait_and_connect_fastboot()
-    get_device_info()
     
     print(f"\n{GREEN}[LAUNCHING]{RESET} Running Core MiUnlock Engine...\n")
     send_activity_log(f"Started Mi Bootloader Unlock Tool (Target: {user})")
@@ -540,9 +537,6 @@ def apply_mi_unlock_permission():
         
     region = input(f"{BOLD}{ORANGE}👉{RESET} Enter Region (global/india/china) [global]: ").strip().lower()
     if not region: region = "global"
-
-    wait_and_connect_fastboot()
-    get_device_info()
     
     print(f"\n{GREEN}[SERVER SYNC]{RESET} Sending Permission Request to Xiaomi API...\n")
     send_activity_log(f"Applied for Mi Unlock Permission (Target: {user})")
