@@ -278,12 +278,6 @@ def get_brom_device_info():
     print(f"\n{RED}[!] Failed to catch BROM port within 60 seconds.{RESET}")
     return False
 
-def verify_admin_access():
-    live_admin_pass = get_cloud_setting('admin_password', None)
-    admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Admin Password: {RESET}").strip()
-    if (live_admin_pass and admin_pass == live_admin_pass) or hashlib.sha256(admin_pass.encode()).hexdigest() == ADVANCE_PASSWORD_HASH: return True
-    print(f"\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
-
 
 # ====== STRONG AUTO LOGIN & PING ENGINE ======
 def ping_server_and_check_ban(hwid, original_pass):
@@ -414,6 +408,13 @@ def check_firebase_approval():
     except: return False
 
 
+def verify_admin_access():
+    live_admin_pass = get_cloud_setting('admin_password', None)
+    admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Admin Password: {RESET}").strip()
+    if (live_admin_pass and admin_pass == live_admin_pass) or hashlib.sha256(admin_pass.encode()).hexdigest() == ADVANCE_PASSWORD_HASH: return True
+    print(f"\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
+
+
 # ====== CBR SMART FINDER ENGINE ======
 def cbr_smart_scanner(mode="all"):
     print(f"\n{CYAN}[SCANNING]{RESET} Deep Scanning for ROMs in Folders...")
@@ -440,34 +441,69 @@ def cbr_smart_scanner(mode="all"):
     return list(set(valid_roms))
 
 
-# EXACT ORIGINAL SAFE ZIP EXTRACTOR (RESTORED AS REQUESTED)
+# ==========================================
+# RESTORED EXACT ORIGINAL EXTRACTOR ENGINE
+# ==========================================
 def extract_safe_zip(zip_path, extract_folder):
     print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(zip_path)}...")
-    if os.path.exists(extract_folder): shutil.rmtree(extract_folder)
-    os.makedirs(extract_folder)
+    print(f"{DIM}Please wait, calculating total size...{RESET}\n")
     
     try:
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            total_size = sum(info.file_size for info in zf.infolist())
-            extracted = 0
-            for info in zf.infolist():
-                target = os.path.join(extract_folder, info.filename)
-                if info.is_dir() or info.filename.endswith('/'):
-                    os.makedirs(target, exist_ok=True); continue
-                os.makedirs(os.path.dirname(target), exist_ok=True)
-                if os.path.isdir(target): continue
-                
-                try:
-                    with zf.open(info) as src, open(target, 'wb') as tgt:
+        if os.path.exists(extract_folder):
+            shutil.rmtree(extract_folder)
+        os.makedirs(extract_folder)
+        
+        if zip_path.endswith('.zip'):
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                infos = zf.infolist()
+                total_size = sum(info.file_size for info in infos)
+                extracted_size = 0
+                for info in infos:
+                    target_path = os.path.join(extract_folder, info.filename)
+                    if info.is_dir() or info.filename.endswith('/'):
+                        os.makedirs(target_path, exist_ok=True)
+                        continue
+                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                    if os.path.isdir(target_path): continue
+                    
+                    with zf.open(info) as source, open(target_path, 'wb') as target:
                         while True:
-                            chunk = src.read(1024 * 1024)
+                            chunk = source.read(1024 * 1024) 
                             if not chunk: break
-                            tgt.write(chunk)
-                            extracted += len(chunk)
-                            pct = (extracted / total_size) * 100 if total_size > 0 else 100
-                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking: {BOLD}{GREEN}{pct:.1f}%{RESET}")
+                            target.write(chunk)
+                            extracted_size += len(chunk)
+                            percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
+                            mb_ex = extracted_size / (1024 * 1024)
+                            mb_tot = total_size / (1024 * 1024)
+                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
                             sys.stdout.flush()
-                except zipfile.BadZipFile: pass
+        else:
+            with tarfile.open(zip_path, 'r:*') as tf:
+                members = tf.getmembers()
+                total_size = sum(m.size for m in members)
+                extracted_size = 0
+                for m in members:
+                    target_path = os.path.join(extract_folder, m.name)
+                    if m.isdir() or m.name.endswith('/'):
+                        os.makedirs(target_path, exist_ok=True)
+                        continue
+                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                    if os.path.isdir(target_path): continue
+                    
+                    f = tf.extractfile(m)
+                    if f:
+                        with open(target_path, 'wb') as target:
+                            while True:
+                                chunk = f.read(1024 * 1024) 
+                                if not chunk: break
+                                target.write(chunk)
+                                extracted_size += len(chunk)
+                                percent = (extracted_size / total_size) * 100 if total_size > 0 else 100
+                                mb_ex = extracted_size / (1024 * 1024)
+                                mb_tot = total_size / (1024 * 1024)
+                                sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking:{RESET} {BOLD}{GREEN}{percent:.1f}%{RESET} | {mb_ex:.1f} MB / {mb_tot:.1f} MB")
+                                sys.stdout.flush()
+                    
         print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
         return True
     except Exception as e:
@@ -683,24 +719,8 @@ def admin_panel():
                     elif act == '4': break
             except: pass
 
-def admin_host_menu():
-    while True:
-        os.system('cls' if os.name == 'nt' else 'clear')
-        premium_header()
-        print(f"{PURPLE}=================================================={RESET}")
-        print(f"{HACKER_GREEN}{BOLD}       🛡️ ADMIN HOST MENU 🛡️       {RESET}")
-        print(f"{PURPLE}=================================================={RESET}\n")
-        print(f"{CYAN} [1]{RESET} ⚡ ADVANCE ONLY CBR OWNER ABDULLAH AL HASIB")
-        print(f"{RED} [2]{RESET} 🔐 Admin Control Panel")
-        print(f"{ORANGE} [0]{RESET} Back to Main Menu")
-        
-        opt = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
-        if opt == '1': advance_abdullah_hasib_tool()
-        elif opt == '2': admin_panel()
-        elif opt == '0': break
 
-
-# ====== [4] FASTBOOT STOCK ROM FLASH MENU ======
+# ====== [4] FASTBOOT STOCK ROM FLASH MENU (RESTORED TO ORIGINAL) ======
 def cbr_smart_flasher(brand="redmi"):
     import requests
     if not IS_WINDOWS: os.system("termux-wake-lock > /dev/null 2>&1")
@@ -737,7 +757,6 @@ def cbr_smart_flasher(brand="redmi"):
     extract_folder = selected_rom
     if not os.path.isdir(selected_rom):
         extract_folder = os.path.join(os.path.dirname(selected_rom), "CBR_Extracted_ROM")
-        # Restored the Exact Original Extraction logic here
         if not extract_safe_zip(selected_rom, extract_folder): 
             input(f"\n{PURPLE}Press Enter...{RESET}")
             return
@@ -745,23 +764,19 @@ def cbr_smart_flasher(brand="redmi"):
     if brand == "redmi":
         sh_file = None
         for root, dirs, files in os.walk(extract_folder):
-            for f in files:
-                if (IS_WINDOWS and f.lower() == "flash_all.bat") or (not IS_WINDOWS and f.lower() == "flash_all.sh"):
-                    sh_file = os.path.join(root, f); break
-            if sh_file: break
-        
-        # Additional deep search logic
-        if not sh_file:
-            for root, dirs, files in os.walk(extract_folder):
-                for f in files:
-                    if f.lower() == "flash_all.sh" or f.lower() == "flash_all.bat":
-                        sh_file = os.path.join(root, f)
-                if sh_file: break
+            if "flash_all.sh" in files:
+                sh_file = os.path.join(root, "flash_all.sh")
+                break
+            elif "flash_all.bat" in files:
+                sh_file = os.path.join(root, "flash_all.bat")
+                break
                 
         if not sh_file: 
             print(f"{RED}[!] 'flash_all' script not found inside extracted folder!{RESET}")
             input(f"\n{PURPLE}Press Enter...{RESET}")
             return
+            
+        script_dir = os.path.dirname(sh_file)
         
         wait_and_connect_fastboot()
         get_device_info()
@@ -777,9 +792,24 @@ def cbr_smart_flasher(brand="redmi"):
         for line in lines:
             line = line.strip()
             if not line or line.startswith('#') or line.startswith('rem') or line.startswith('echo'): continue
+            
             if line.startswith('fastboot'):
-                cmd = line.replace('`dirname $0`', os.path.dirname(sh_file)).replace('%~dp0', os.path.dirname(sh_file) + os.sep).replace('$*', '').replace('%*', '')
-                if not IS_WINDOWS: cmd = cmd.replace('\\', '/')
+                cmd = line.replace('`dirname $0`', script_dir).replace('%~dp0', script_dir + '/')
+                cmd = cmd.replace('$*', '').replace('%*', '').replace('\\', '/')
+                
+                is_valid_action = False
+                valid_keywords = ['flash', 'erase', 'format', 'boot', 'reboot', 'oem', 'set_active']
+                cmd_parts = [p.lower() for p in cmd.split() if p.lower() != 'fastboot' and not p.startswith('-')]
+                
+                if cmd_parts:
+                    action = cmd_parts[0]
+                    if any(action.startswith(vk) for vk in valid_keywords) and '|' not in cmd and '>' not in cmd and 'grep' not in cmd:
+                        is_valid_action = True
+                        
+                if not is_valid_action:
+                    print(f"{ORANGE}[BYPASS]{RESET} {DIM}Skipping script logic/check: {line}{RESET}")
+                    continue
+                
                 if fb_bin != "fastboot" and cmd.startswith("fastboot "): cmd = fb_bin + cmd[8:]
                 
                 print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
@@ -854,6 +884,9 @@ def cbr_smart_flasher(brand="redmi"):
         execute_cmd("fastboot reboot recovery")
         print(f"\n{GREEN}[✓] INFINIX FLASHING COMPLETED!{RESET}")
         input(f"\n{PURPLE}Press Enter...{RESET}")
+
+def fastboot_stock_rom_menu():
+    cbr_smart_flasher(brand="redmi")
 
 
 # ====== [6] APPLY MI UNLOCK PERMISSION API ======
