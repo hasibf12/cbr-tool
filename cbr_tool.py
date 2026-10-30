@@ -278,6 +278,12 @@ def get_brom_device_info():
     print(f"\n{RED}[!] Failed to catch BROM port within 60 seconds.{RESET}")
     return False
 
+def verify_admin_access():
+    live_admin_pass = get_cloud_setting('admin_password', None)
+    admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Admin Password: {RESET}").strip()
+    if (live_admin_pass and admin_pass == live_admin_pass) or hashlib.sha256(admin_pass.encode()).hexdigest() == ADVANCE_PASSWORD_HASH: return True
+    print(f"\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
+
 
 # ====== STRONG AUTO LOGIN & PING ENGINE ======
 def ping_server_and_check_ban(hwid, original_pass):
@@ -408,13 +414,6 @@ def check_firebase_approval():
     except: return False
 
 
-def verify_admin_access():
-    live_admin_pass = get_cloud_setting('admin_password', None)
-    admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Admin Password: {RESET}").strip()
-    if (live_admin_pass and admin_pass == live_admin_pass) or hashlib.sha256(admin_pass.encode()).hexdigest() == ADVANCE_PASSWORD_HASH: return True
-    print(f"\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
-
-
 # ====== CBR SMART FINDER ENGINE ======
 def cbr_smart_scanner(mode="all"):
     print(f"\n{CYAN}[SCANNING]{RESET} Deep Scanning for ROMs in Folders...")
@@ -440,22 +439,25 @@ def cbr_smart_scanner(mode="all"):
         except: pass
     return list(set(valid_roms))
 
-def extract_safe_zip(file_path, extract_folder):
-    print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(file_path)}...")
+
+# EXACT ORIGINAL SAFE ZIP EXTRACTOR (RESTORED AS REQUESTED)
+def extract_safe_zip(zip_path, extract_folder):
+    print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(zip_path)}...")
     if os.path.exists(extract_folder): shutil.rmtree(extract_folder)
     os.makedirs(extract_folder)
     
     try:
-        if file_path.lower().endswith('.zip'):
-            with zipfile.ZipFile(file_path, 'r') as zf:
-                total_size = sum(info.file_size for info in zf.infolist())
-                extracted = 0
-                for info in zf.infolist():
-                    target = os.path.join(extract_folder, info.filename)
-                    if info.is_dir() or info.filename.endswith('/'):
-                        os.makedirs(target, exist_ok=True); continue
-                    os.makedirs(os.path.dirname(target), exist_ok=True)
-                    if os.path.isdir(target): continue
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            total_size = sum(info.file_size for info in zf.infolist())
+            extracted = 0
+            for info in zf.infolist():
+                target = os.path.join(extract_folder, info.filename)
+                if info.is_dir() or info.filename.endswith('/'):
+                    os.makedirs(target, exist_ok=True); continue
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                if os.path.isdir(target): continue
+                
+                try:
                     with zf.open(info) as src, open(target, 'wb') as tgt:
                         while True:
                             chunk = src.read(1024 * 1024)
@@ -463,31 +465,13 @@ def extract_safe_zip(file_path, extract_folder):
                             tgt.write(chunk)
                             extracted += len(chunk)
                             pct = (extracted / total_size) * 100 if total_size > 0 else 100
-                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking ZIP: {BOLD}{GREEN}{pct:.1f}%{RESET}")
+                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking: {BOLD}{GREEN}{pct:.1f}%{RESET}")
                             sys.stdout.flush()
-            print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
-            return True
-            
-        elif file_path.lower().endswith('.tgz') or file_path.lower().endswith('.tar.gz'):
-            with tarfile.open(file_path, "r:gz") as tar:
-                members = tar.getmembers()
-                total_mems = len(members)
-                extracted_mems = 0
-                for member in members:
-                    tar.extract(member, path=extract_folder)
-                    extracted_mems += 1
-                    pct = (extracted_mems / total_mems) * 100
-                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking TAR: {BOLD}{GREEN}{pct:.1f}%{RESET}")
-                    sys.stdout.flush()
-            print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
-            return True
-            
-        else:
-            print(f"\n{RED}[!] Unsupported file format. Please provide a .zip or .tgz file.{RESET}")
-            return False
-            
-    except Exception as e: 
-        print(f"\n{RED}[!] Extractor Failed: {str(e)}{RESET}")
+                except zipfile.BadZipFile: pass
+        print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
+        return True
+    except Exception as e:
+        print(f"\n\n{RED}[!] Extraction Failed: {e}{RESET}")
         return False
 
 
@@ -753,6 +737,7 @@ def cbr_smart_flasher(brand="redmi"):
     extract_folder = selected_rom
     if not os.path.isdir(selected_rom):
         extract_folder = os.path.join(os.path.dirname(selected_rom), "CBR_Extracted_ROM")
+        # Restored the Exact Original Extraction logic here
         if not extract_safe_zip(selected_rom, extract_folder): 
             input(f"\n{PURPLE}Press Enter...{RESET}")
             return
@@ -869,22 +854,6 @@ def cbr_smart_flasher(brand="redmi"):
         execute_cmd("fastboot reboot recovery")
         print(f"\n{GREEN}[✓] INFINIX FLASHING COMPLETED!{RESET}")
         input(f"\n{PURPLE}Press Enter...{RESET}")
-
-def fastboot_stock_rom_menu():
-    while True:
-        os.system('cls' if os.name == 'nt' else 'clear')
-        premium_header()
-        print(f"{PURPLE}=================================================={RESET}")
-        print(f"{HACKER_GREEN}{BOLD}    📱 FASTBOOT STOCK ROM FLASH (Mobile/PC) 📱    {RESET}")
-        print(f"{PURPLE}=================================================={RESET}\n")
-        print(f"{GREEN} [1]{RESET} Redmi ROM Flash (Native Engine)")
-        print(f"{GREEN} [2]{RESET} Infinix Stock Flash (FastbootD Engine)")
-        print(f"{ORANGE} [0]{RESET} Back to Main Menu")
-        
-        opt = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
-        if opt == '1': cbr_smart_flasher(brand="redmi")
-        elif opt == '2': cbr_smart_flasher(brand="infinix")
-        elif opt == '0': break
 
 
 # ====== [6] APPLY MI UNLOCK PERMISSION API ======
