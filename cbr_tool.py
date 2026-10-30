@@ -13,6 +13,9 @@ import zipfile
 import glob
 import json
 import re
+import urllib.request
+import urllib.parse
+from datetime import datetime
 
 # 💻 DUAL-CORE ARCHITECTURE DETECTOR 📱
 IS_WINDOWS = (platform.system().lower() == "windows")
@@ -437,21 +440,22 @@ def cbr_smart_scanner(mode="all"):
         except: pass
     return list(set(valid_roms))
 
-def extract_safe_zip(zip_path, extract_folder):
-    print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(zip_path)}...")
+def extract_safe_zip(file_path, extract_folder):
+    print(f"\n{CYAN}[EXTRACTING]{RESET} Unpacking {os.path.basename(file_path)}...")
     if os.path.exists(extract_folder): shutil.rmtree(extract_folder)
     os.makedirs(extract_folder)
+    
     try:
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            total_size = sum(info.file_size for info in zf.infolist())
-            extracted = 0
-            for info in zf.infolist():
-                target = os.path.join(extract_folder, info.filename)
-                if info.is_dir() or info.filename.endswith('/'):
-                    os.makedirs(target, exist_ok=True); continue
-                os.makedirs(os.path.dirname(target), exist_ok=True)
-                if os.path.isdir(target): continue
-                try:
+        if file_path.lower().endswith('.zip'):
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                total_size = sum(info.file_size for info in zf.infolist())
+                extracted = 0
+                for info in zf.infolist():
+                    target = os.path.join(extract_folder, info.filename)
+                    if info.is_dir() or info.filename.endswith('/'):
+                        os.makedirs(target, exist_ok=True); continue
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    if os.path.isdir(target): continue
                     with zf.open(info) as src, open(target, 'wb') as tgt:
                         while True:
                             chunk = src.read(1024 * 1024)
@@ -459,13 +463,13 @@ def extract_safe_zip(zip_path, extract_folder):
                             tgt.write(chunk)
                             extracted += len(chunk)
                             pct = (extracted / total_size) * 100 if total_size > 0 else 100
-                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking: {BOLD}{GREEN}{pct:.1f}%{RESET}")
+                            sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking ZIP: {BOLD}{GREEN}{pct:.1f}%{RESET}")
                             sys.stdout.flush()
-                except zipfile.BadZipFile: pass
-        
-        # Tar Extraction Fallback for .tgz
-        if zip_path.endswith('.tgz') or zip_path.endswith('.tar.gz'):
-            with tarfile.open(zip_path, "r:gz") as tar:
+            print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
+            return True
+            
+        elif file_path.lower().endswith('.tgz') or file_path.lower().endswith('.tar.gz'):
+            with tarfile.open(file_path, "r:gz") as tar:
                 members = tar.getmembers()
                 total_mems = len(members)
                 extracted_mems = 0
@@ -475,10 +479,15 @@ def extract_safe_zip(zip_path, extract_folder):
                     pct = (extracted_mems / total_mems) * 100
                     sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking TAR: {BOLD}{GREEN}{pct:.1f}%{RESET}")
                     sys.stdout.flush()
-        
-        print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}"); return True
+            print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}")
+            return True
+            
+        else:
+            print(f"\n{RED}[!] Unsupported file format. Please provide a .zip or .tgz file.{RESET}")
+            return False
+            
     except Exception as e: 
-        print(f"\n{RED}[!] Fallback Extractor Failed: {str(e)}{RESET}")
+        print(f"\n{RED}[!] Extractor Failed: {str(e)}{RESET}")
         return False
 
 
@@ -744,7 +753,6 @@ def cbr_smart_flasher(brand="redmi"):
     extract_folder = selected_rom
     if not os.path.isdir(selected_rom):
         extract_folder = os.path.join(os.path.dirname(selected_rom), "CBR_Extracted_ROM")
-        # Restored the extraction logic from text_4.txt exactly as requested
         if not extract_safe_zip(selected_rom, extract_folder): 
             input(f"\n{PURPLE}Press Enter...{RESET}")
             return
@@ -757,7 +765,7 @@ def cbr_smart_flasher(brand="redmi"):
                     sh_file = os.path.join(root, f); break
             if sh_file: break
         
-        # Additional deep search logic restored
+        # Additional deep search logic
         if not sh_file:
             for root, dirs, files in os.walk(extract_folder):
                 for f in files:
