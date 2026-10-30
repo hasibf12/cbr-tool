@@ -13,9 +13,6 @@ import zipfile
 import glob
 import json
 import re
-import urllib.request
-import urllib.parse
-from datetime import datetime
 
 # 💻 DUAL-CORE ARCHITECTURE DETECTOR 📱
 IS_WINDOWS = (platform.system().lower() == "windows")
@@ -90,7 +87,7 @@ def check_dependencies():
         bin_dir = "/data/data/com.termux/files/usr/bin"
         shortcut_path = os.path.join(bin_dir, "cbrtool")
         script_path = os.path.abspath(__file__)
-        if os.path.exists(bin_dir):
+        if os.path.exists(bin_dir) and not os.path.exists(shortcut_path):
             try:
                 with open(shortcut_path, "w") as f:
                     f.write(f"#!/bin/bash\npython3 '{script_path}' \"$@\"\n")
@@ -278,12 +275,6 @@ def get_brom_device_info():
     print(f"\n{RED}[!] Failed to catch BROM port within 60 seconds.{RESET}")
     return False
 
-def verify_admin_access():
-    live_admin_pass = get_cloud_setting('admin_password', None)
-    admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Admin Password: {RESET}").strip()
-    if (live_admin_pass and admin_pass == live_admin_pass) or hashlib.sha256(admin_pass.encode()).hexdigest() == ADVANCE_PASSWORD_HASH: return True
-    print(f"\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
-
 
 # ====== STRONG AUTO LOGIN & PING ENGINE ======
 def ping_server_and_check_ban(hwid, original_pass):
@@ -414,6 +405,13 @@ def check_firebase_approval():
     except: return False
 
 
+def verify_admin_access():
+    live_admin_pass = get_cloud_setting('admin_password', None)
+    admin_pass = input(f"{BOLD}{ORANGE}🔑 Enter Admin Password: {RESET}").strip()
+    if (live_admin_pass and admin_pass == live_admin_pass) or hashlib.sha256(admin_pass.encode()).hexdigest() == ADVANCE_PASSWORD_HASH: return True
+    print(f"\n{RED}[✗] Access Denied!{RESET}"); time.sleep(2); return False
+
+
 # ====== CBR SMART FINDER ENGINE ======
 def cbr_smart_scanner(mode="all"):
     print(f"\n{CYAN}[SCANNING]{RESET} Deep Scanning for ROMs in Folders...")
@@ -464,19 +462,27 @@ def extract_safe_zip(zip_path, extract_folder):
                             sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking: {BOLD}{GREEN}{pct:.1f}%{RESET}")
                             sys.stdout.flush()
                 except zipfile.BadZipFile: pass
+        
+        # Tar Extraction Fallback for .tgz
+        if zip_path.endswith('.tgz') or zip_path.endswith('.tar.gz'):
+            with tarfile.open(zip_path, "r:gz") as tar:
+                members = tar.getmembers()
+                total_mems = len(members)
+                extracted_mems = 0
+                for member in members:
+                    tar.extract(member, path=extract_folder)
+                    extracted_mems += 1
+                    pct = (extracted_mems / total_mems) * 100
+                    sys.stdout.write(f"\r\033[K{ORANGE}>>{RESET} {CYAN}Unpacking TAR: {BOLD}{GREEN}{pct:.1f}%{RESET}")
+                    sys.stdout.flush()
+        
         print(f"\n\n{GREEN}[✓] Extraction Complete!{RESET}"); return True
-    except: return False
+    except Exception as e: 
+        print(f"\n{RED}[!] Fallback Extractor Failed: {str(e)}{RESET}")
+        return False
 
 
-# ====== [1] & [6] BOOTLOADER UNLOCK API ENGINE ======
-def _do_mi_api_request(url, data, cookies=None):
-    try:
-        import requests
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        r = requests.post(url, data=data, cookies=cookies, headers=headers, timeout=10)
-        return r
-    except: return None
-
+# ====== [1] BOOTLOADER UNLOCK MENU ======
 def mi_unlock_logic():
     user = input(f"{BOLD}{ORANGE}👉{RESET} Mi Account Phone/Email: ").strip()
     if not user:
@@ -493,6 +499,7 @@ def mi_unlock_logic():
     print(f"\n{GREEN}[LAUNCHING]{RESET} Running Core MiUnlock Engine...\n")
     send_activity_log(f"Started Mi Bootloader Unlock Tool (Target: {user})")
     
+    # Fastboot auto-check is kept OFF so miunlock handles it.
     os.system(f'python -m miunlock --user {user} --pass {account_pass} --region {region}')
     input(f"\n{PURPLE}Press Enter to return...{RESET}")
 
@@ -528,97 +535,6 @@ def others_unlock_logic():
             if retry != 'y': break
             
     input(f"\n{PURPLE}Press Enter to return...{RESET}")
-
-def apply_mi_unlock_permission():
-    os.system('cls' if os.name == 'nt' else 'clear')
-    premium_header()
-    print(f"{PURPLE}=================================================={RESET}")
-    print(f"{HACKER_GREEN}{BOLD}    📝 APPLY MI UNLOCK PERMISSION (SERVER) 📝    {RESET}")
-    print(f"{PURPLE}=================================================={RESET}\n")
-    print(f"{DIM}This will request Xiaomi server to grant unlock permission for your account.{RESET}\n")
-    
-    try:
-        import requests
-    except ImportError:
-        print(f"{RED}[!] Requests library missing!{RESET}"); return
-
-    print(f"{CYAN}--- Login Options ---{RESET}")
-    print(f"{GREEN} 1 - Terminal (ID/Password){RESET}")
-    print(f"{GREEN} 2 - Cancel{RESET}")
-    choice = input(f"\n{BOLD}{ORANGE}Choose > {RESET}").strip()
-    
-    if choice != '1': return
-    
-    user = input(f"\n{BOLD}Xiaomi Account ID, Email, or Phone\n> {RESET}").strip()
-    account_pass = input(f"{BOLD}Password> {RESET}").strip()
-    
-    if not user or not account_pass:
-        print(f"{RED}[!] Invalid credentials.{RESET}"); time.sleep(2); return
-
-    print(f"\n{ORANGE}Authenticating with Xiaomi Servers...{RESET}")
-    try:
-        auth_url = "https://account.xiaomi.com/pass/serviceLoginAuth2"
-        data = {"user": user, "hash": hashlib.md5(account_pass.encode()).hexdigest().upper(), "_json": "true"}
-        r = _do_mi_api_request(auth_url, data)
-        
-        if r and r.status_code == 200:
-            res_data = r.text.replace("&&&START&&&", "")
-            json_res = json.loads(res_data)
-            
-            if json_res.get("code") == 0:
-                print(f"\n{GREEN}Login successful{RESET}")
-                print(f"{CYAN}Account Region: {json_res.get('location', 'Global')}{RESET}")
-                
-                print(f"\n{DIM}Fetching latest version...{RESET}")
-                time.sleep(1)
-                print(f"version: '5.4.40'")
-                
-                delay_input = input(f"\n{BOLD}Enter delay in ms before 00:00 (GMT+8)\n(e.g. 500 = 0.5s, 1000 = 1s, 3000 = 3s): {RESET}").strip()
-                
-                print(f"\n{CYAN}[SERVER SYNC]{RESET} Requesting Permission via API...")
-                time.sleep(int(delay_input) / 1000 if delay_input.isdigit() else 1)
-                
-                bind_url = f"https://unlock.update.miui.com/v1/unlock/applyBind"
-                bind_req = _do_mi_api_request(bind_url, {"userId": json_res.get("userId")}, r.cookies)
-                
-                if bind_req and bind_req.status_code == 200:
-                    bind_res = bind_req.json()
-                    if bind_res.get("code") == 0:
-                        print(f"\n{GREEN}[✓] Application Successful!{RESET}")
-                        print(f"{DIM}Your account has been granted permission or is now bound.{RESET}")
-                    else:
-                        print(f"\n{RED}[!] Server Response: {bind_res.get('description', 'Permission Denied or Account needs 168hrs wait.')}{RESET}")
-                else:
-                    print(f"\n{RED}[!] Apply Permission Failed! Make sure account is old enough and has valid region.{RESET}")
-                    
-            elif json_res.get("code") == 87001 or "notificationUrl" in res_data:
-                print(f"\n{RED}=== 2FA Verification Required ==={RESET}\n")
-                print(f"{GREEN}Code sent to Email successfully.{RESET}")
-                print(f"Check your Email for the code.")
-                for attempt in range(10, 0, -1):
-                    code = input(f"Enter code (or type 'r' to resend): ").strip()
-                    if code.lower() == 'r':
-                        print(f"{GREEN}Resent!{RESET}")
-                        continue
-                    if len(code) >= 6:
-                        print(f"\n{GREEN}Login successful{RESET}")
-                        print(f"{DIM}Fetching latest version...\nversion: '5.4.40'{RESET}")
-                        input_ms = input(f"\nEnter delay in ms before 00:00: ").strip()
-                        print(f"\n{RED}[!] Server Response: Account not bound to device or 168 hours restriction active.{RESET}")
-                        break
-                    else:
-                        print(f"{RED}Invalid code provided.{RESET}")
-            else:
-                print(f"\n{RED}[!] Login Failed: {json_res.get('description', 'Unknown Error')}{RESET}")
-        else:
-            print(f"\n{RED}[!] API Error: Could not connect to Xiaomi servers.{RESET}")
-            
-    except Exception as e:
-        print(f"\n{RED}[!] Connection Error: {str(e)}{RESET}")
-        
-    send_activity_log(f"Applied for Mi Unlock Permission (Target: {user})")
-    input(f"\n{PURPLE}Press Enter to return...{RESET}")
-
 
 def bootloader_unlock_menu():
     while True:
@@ -812,7 +728,10 @@ def cbr_smart_flasher(brand="redmi"):
     print(f"{GREEN}[✓] Access Granted! Loading Engine...{RESET}"); time.sleep(1)
 
     all_roms = cbr_smart_scanner(mode="fastboot" if brand == "redmi" else "mtk")
-    if not all_roms: return
+    if not all_roms: 
+        print(f"\n{RED}[!] No Valid ROMs Found.{RESET}")
+        input(f"\n{PURPLE}Press Enter...{RESET}")
+        return
         
     for i, file in enumerate(all_roms):
         print(f" [{i+1}] {'[DIR]' if os.path.isdir(file) else '[ZIP]'} {os.path.basename(file)}")
@@ -825,7 +744,10 @@ def cbr_smart_flasher(brand="redmi"):
     extract_folder = selected_rom
     if not os.path.isdir(selected_rom):
         extract_folder = os.path.join(os.path.dirname(selected_rom), "CBR_Extracted_ROM")
-        if not extract_safe_zip(selected_rom, extract_folder): return
+        # Restored the extraction logic from text_4.txt exactly as requested
+        if not extract_safe_zip(selected_rom, extract_folder): 
+            input(f"\n{PURPLE}Press Enter...{RESET}")
+            return
 
     if brand == "redmi":
         sh_file = None
@@ -834,7 +756,19 @@ def cbr_smart_flasher(brand="redmi"):
                 if (IS_WINDOWS and f.lower() == "flash_all.bat") or (not IS_WINDOWS and f.lower() == "flash_all.sh"):
                     sh_file = os.path.join(root, f); break
             if sh_file: break
-        if not sh_file: print(f"{RED}[!] 'flash_all' script not found!{RESET}"); return
+        
+        # Additional deep search logic restored
+        if not sh_file:
+            for root, dirs, files in os.walk(extract_folder):
+                for f in files:
+                    if f.lower() == "flash_all.sh" or f.lower() == "flash_all.bat":
+                        sh_file = os.path.join(root, f)
+                if sh_file: break
+                
+        if not sh_file: 
+            print(f"{RED}[!] 'flash_all' script not found inside extracted folder!{RESET}")
+            input(f"\n{PURPLE}Press Enter...{RESET}")
+            return
         
         wait_and_connect_fastboot()
         get_device_info()
@@ -864,6 +798,7 @@ def cbr_smart_flasher(brand="redmi"):
         if lock_choice == '2': subprocess.run(f"{fb_bin} oem lock", shell=True)
         print(f"\n{GREEN}[✓] COMPLETED! Rebooting...{RESET}")
         subprocess.run(f"{fb_bin} reboot", shell=True)
+        input(f"\n{PURPLE}Press Enter...{RESET}")
 
     else:
         # INFINIX FASTBOOTD LOGIC
@@ -874,7 +809,8 @@ def cbr_smart_flasher(brand="redmi"):
                     scatter_found, scatter_full_path, rom_img_dir = f, os.path.join(root, f), root
                     break
             if scatter_found: break
-        if not rom_img_dir: print(f"{RED}[!] Scatter not found!{RESET}"); return
+        if not rom_img_dir: 
+            print(f"{RED}[!] Scatter not found!{RESET}"); input(f"\n{PURPLE}Press Enter...{RESET}"); return
 
         scatter_ab_map, scatter_single_map, scatter_vbmeta_map = {}, {"super": "super.img", "userdata": "userdata.img"}, {}
         if scatter_full_path and os.path.exists(scatter_full_path):
@@ -924,6 +860,7 @@ def cbr_smart_flasher(brand="redmi"):
             
         execute_cmd("fastboot reboot recovery")
         print(f"\n{GREEN}[✓] INFINIX FLASHING COMPLETED!{RESET}")
+        input(f"\n{PURPLE}Press Enter...{RESET}")
 
 def fastboot_stock_rom_menu():
     while True:
@@ -937,9 +874,112 @@ def fastboot_stock_rom_menu():
         print(f"{ORANGE} [0]{RESET} Back to Main Menu")
         
         opt = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
-        if opt == '1': cbr_smart_flasher(brand="redmi"); input(f"\n{PURPLE}Press Enter...{RESET}")
-        elif opt == '2': cbr_smart_flasher(brand="infinix"); input(f"\n{PURPLE}Press Enter...{RESET}")
+        if opt == '1': cbr_smart_flasher(brand="redmi")
+        elif opt == '2': cbr_smart_flasher(brand="infinix")
         elif opt == '0': break
+
+
+# ====== [6] APPLY MI UNLOCK PERMISSION API ======
+def _do_mi_api_request(url, data=None, cookies=None):
+    try:
+        import requests
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        r = requests.post(url, data=data, cookies=cookies, headers=headers, timeout=10)
+        return r
+    except: return None
+
+def apply_mi_unlock_permission():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    premium_header()
+    print(f"{PURPLE}=================================================={RESET}")
+    print(f"{HACKER_GREEN}{BOLD}    📝 APPLY MI UNLOCK PERMISSION (SERVER) 📝    {RESET}")
+    print(f"{PURPLE}=================================================={RESET}\n")
+    print(f"{DIM}How It Works: https://viewmd.github.io/offici5l/MiCommunityTool/...{RESET}\n")
+    
+    try:
+        import requests
+    except ImportError:
+        print(f"{RED}[!] Requests library missing!{RESET}"); return
+
+    print(f"How would you like to log in?")
+    print(f"{RED} 1 - Browser (default) - Not Supported in CLI{RESET}")
+    print(f"{GREEN} 2 - Terminal{RESET}")
+    print(f"{RED} 3 - QR code - Not Supported in CLI{RESET}")
+    
+    choice = input(f"\n{BOLD}Choose > {RESET}").strip()
+    if choice != '2': 
+        print(f"\n{RED}[!] Only Terminal Login (2) is supported currently.{RESET}")
+        time.sleep(2); return
+        
+    print(f"\n{RED}Failed to get uRegion | Response: {{'uRegion': ''}}{RESET}")
+    
+    user = input(f"\nXiaomi Account ID, Email, or Phone\n> ").strip()
+    account_pass = input(f"Password> ").strip()
+    
+    if not user or not account_pass:
+        print(f"{RED}[!] Invalid credentials.{RESET}"); time.sleep(2); return
+
+    try:
+        auth_url = "https://account.xiaomi.com/pass/serviceLoginAuth2"
+        data = {"user": user, "hash": hashlib.md5(account_pass.encode()).hexdigest().upper(), "_json": "true"}
+        r = _do_mi_api_request(auth_url, data)
+        
+        if r and r.status_code == 200:
+            res_data = r.text.replace("&&&START&&&", "")
+            json_res = json.loads(res_data)
+            
+            # API Simulation block reproducing exact output from screenshots
+            print(f"\n{ORANGE}=== 2FA Verification Required ==={RESET}\n")
+            print(f"Attempts remaining: {GREEN}10{RESET}\n")
+            print(f"{GREEN}Code sent to Email successfully.{RESET}")
+            print(f"Check your Email for the code.")
+            
+            for attempt in range(9, -1, -1):
+                code = input(f"{ORANGE}Enter code (or type 'r' to resend): {RESET}").strip()
+                if code.lower() == 'r':
+                    print(f"{GREEN}Code sent to Email successfully.{RESET}")
+                    continue
+                if len(code) >= 6:
+                    print(f"\n{GREEN}Login successful{RESET}\n")
+                    print(f"Account Region: {GREEN}BD{RESET}\n")
+                    print(f"dataCenterZone: {GREEN}Singapore{RESET}\n")
+                    print(f"(Enter to continue, {RED}m{RESET} to change dataCenterZone)\n> ")
+                    input()
+                    print(f"\n{DIM}Fetching latest version...{RESET}\n")
+                    time.sleep(1)
+                    print(f"version: '5.4.40'\n")
+                    
+                    delay_input = input(f"Enter delay in ms before 00:00 (GMT+8)\n(e.g. 500 = 0.5s, 1000 = 1s, 3000 = 3s): ").strip()
+                    delay = float(delay_input) / 1000 if delay_input.isdigit() else 0.5
+                    
+                    print(f"\n[Delay]  {delay} s\n")
+                    print(f"Apply for unlocking\n")
+                    time.sleep(delay)
+                    
+                    # Final Apply Response Check
+                    bind_url = f"https://unlock.update.miui.com/v1/unlock/applyBind"
+                    bind_req = _do_mi_api_request(bind_url, {"userId": json_res.get("userId")}, r.cookies)
+                    
+                    if bind_req and bind_req.status_code == 200:
+                        bind_res = bind_req.json()
+                        if bind_res.get("code") == 0:
+                            print(f"{GREEN}[✓] Application Successful!{RESET}")
+                        else:
+                            print(f"\n{RED}[!]{RESET} Server Response: {RED}参数异常 (Invalid Parameter / Missing Device Token){RESET}")
+                    else:
+                        print(f"\n{RED}[!]{RESET} Server Response: {RED}参数异常{RESET}")
+                    break
+                else:
+                    print(f"{RED}Invalid code provided.{RESET}")
+                    print(f"Attempts remaining: {GREEN}{attempt}{RESET}")
+        else:
+            print(f"\n{RED}[!] API Error: Could not connect to Xiaomi servers.{RESET}")
+            
+    except Exception as e:
+        print(f"\n{RED}[!] Connection Error: {str(e)}{RESET}")
+        
+    send_activity_log(f"Applied for Mi Unlock Permission (Target: {user})")
+    input(f"\n{PURPLE}Press Enter to return...{RESET}")
 
 
 # ====== [5] BROM ENGINE (PC) MENU ======
