@@ -13,9 +13,7 @@ import zipfile
 import glob
 import json
 import re
-import urllib.request
-import urllib.parse
-from datetime import datetime
+import shlex
 
 # 💻 DUAL-CORE ARCHITECTURE DETECTOR 📱
 IS_WINDOWS = (platform.system().lower() == "windows")
@@ -40,10 +38,25 @@ ADVANCE_PASSWORD_HASH = hashlib.sha256(bytes.fromhex("63627230313937363633343034
 FIREBASE_SECRET = "W2u5TaOnnVWpdOwkCSsLDPuUzrXnSiC0o7ngf7zJ"
 SETTINGS_URL = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Settings.json?auth={FIREBASE_SECRET}"
 SESSION_FILE = os.path.expanduser("~/.cbr_session.json")
+HWID_FILE = os.path.expanduser("~/.cbr_hwid")
 DEVNULL = subprocess.DEVNULL
 
 ACTIVE_USB_DEV = None
 GRANTED_USB_DEVS = set()
+
+def get_hwid():
+    if os.path.exists(HWID_FILE):
+        try:
+            with open(HWID_FILE, 'r') as f:
+                return f.read().strip()
+        except: pass
+    raw_id = platform.node() + str(uuid.getnode())
+    hwid = hashlib.md5(raw_id.encode()).hexdigest()[:15].upper()
+    try:
+        with open(HWID_FILE, 'w') as f:
+            f.write(hwid)
+    except: pass
+    return hwid
 
 def get_cloud_setting(key, default_val):
     try:
@@ -51,21 +64,18 @@ def get_cloud_setting(key, default_val):
         res = requests.get(SETTINGS_URL, timeout=8).json()
         if isinstance(res, dict) and key in res:
             return res[key]
-    except:
-        pass
+    except: pass
     return default_val
 
 def send_activity_log(action_msg):
     try:
         import requests
-        raw_id = platform.node() + str(uuid.getnode())
-        hwid = hashlib.md5(raw_id.encode()).hexdigest()[:15].upper()
+        hwid = get_hwid()
         db_url = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users/{hwid}/activity_logs.json?auth={FIREBASE_SECRET}"
         timestamp = time.strftime("%Y-%m-%d %I:%M:%S %p")
         log_data = {str(int(time.time())): f"[{timestamp}] {action_msg}"}
         requests.patch(db_url, json=log_data)
-    except:
-        pass
+    except: pass
 
 def premium_header():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -90,7 +100,7 @@ def check_dependencies():
         bin_dir = "/data/data/com.termux/files/usr/bin"
         shortcut_path = os.path.join(bin_dir, "cbrtool")
         script_path = os.path.abspath(__file__)
-        if os.path.exists(bin_dir) and not os.path.exists(shortcut_path):
+        if os.path.exists(bin_dir):
             try:
                 with open(shortcut_path, "w") as f:
                     f.write(f"#!/bin/bash\npython3 '{script_path}' \"$@\"\n")
@@ -118,7 +128,7 @@ def check_dependencies():
             res = subprocess.call([sys.executable, "-m", "pip", "install", "mtkclient", "--no-deps", "--no-warn-script-location"], stdout=DEVNULL, stderr=DEVNULL)
             if res != 0:
                 subprocess.call([sys.executable, "-m", "pip", "install", "https://github.com/bkerler/mtkclient/archive/main.zip", "--no-deps", "--no-warn-script-location"], stdout=DEVNULL, stderr=DEVNULL)
-                subprocess.call([sys.executable, "-m", "pip", "install", "pycryptodome", "usb", "colorama", "--no-warn-script-location"], stdout=DEVNULL, stderr=DEVNULL)
+                subprocess.call([sys.executable, "-m", "pip", "install", "pycryptodome", "pyusb", "colorama", "--no-warn-script-location"], stdout=DEVNULL, stderr=DEVNULL)
     else:
         mtk_bin = shutil.which("mtk")
         if not mtk_bin:
@@ -157,13 +167,13 @@ def trigger_otg_popup(silent=False, force=False):
                         for dev in usb_devs:
                             if dev in GRANTED_USB_DEVS and not force: continue
                             if not silent: print(f"{CYAN}[OTG]{RESET} Requesting USB Permission for {dev}...")
-                            req = subprocess.run(["termux-usb", "-r", dev], capture_output=True, text=True, timeout=12)
+                            req = subprocess.run(["termux-usb", "-r", dev], capture_output=True, text=True, timeout=8)
                             req_out = ((req.stdout or "") + (req.stderr or "")).lower()
                             if "granted" in req_out or "yes" in req_out or (req.returncode == 0 and "denied" not in req_out):
                                 GRANTED_USB_DEVS.add(dev)
                                 ACTIVE_USB_DEV = dev
                                 if not silent: print(f"{GREEN}[✓] OTG Permission Locked!{RESET}")
-                        time.sleep(0.8)
+                        time.sleep(0.5)
                         return True
                     else: ACTIVE_USB_DEV = None
         except: pass
@@ -174,20 +184,18 @@ def run_usb_fastboot_probe(fb_bin, args_list, timeout_sec=5):
     try:
         res = subprocess.run([fb_bin] + args_list, capture_output=True, text=True, timeout=timeout_sec)
         comb = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()
-        if comb and "waiting for" not in comb.lower() and "no permissions" not in comb.lower():
+        if comb and "waiting for any device" not in comb.lower() and "no permissions" not in comb.lower():
             return comb
     except: pass
 
-    if not IS_WINDOWS and ACTIVE_USB_DEV and shutil.which("termux-usb") is not None:
-        for candidate_bin in [fb_bin, "fastboot", "termux-fastboot"]:
-            if shutil.which(candidate_bin) is None: continue
-            cmd_inner = f"{candidate_bin} {' '.join(args_list)}"
-            try:
-                res2 = subprocess.run(["termux-usb", "-e", cmd_inner, ACTIVE_USB_DEV], capture_output=True, text=True, timeout=timeout_sec)
-                comb2 = ((res2.stdout or "") + "\n" + (res2.stderr or "")).strip()
-                if comb2 and "waiting for" not in comb2.lower() and "no permissions" not in comb2.lower():
-                    return comb2
-            except: pass
+    # Direct termux-fastboot call natively handles termux-usb bridging in background
+    if not IS_WINDOWS and fb_bin != "termux-fastboot" and shutil.which("termux-fastboot") is not None:
+        try:
+            res2 = subprocess.run(["termux-fastboot"] + args_list, capture_output=True, text=True, timeout=timeout_sec)
+            comb2 = ((res2.stdout or "") + "\n" + (res2.stderr or "")).strip()
+            if comb2 and "waiting for" not in comb2.lower() and "no permissions" not in comb2.lower():
+                return comb2
+        except: pass
     return ""
 
 def check_fastboot():
@@ -199,10 +207,12 @@ def check_fastboot():
         else: sys.exit(1)
 
 def wait_and_connect_fastboot():
-    print(f"\n{CYAN}[SYSTEM]{RESET} Checking Fastboot Connection (Bugjaeger Style)...")
-    print(f"{DIM}Please connect your phone in Fastboot mode and 'Allow' USB Debugging if prompted.{RESET}")
+    print(f"\n{CYAN}[SYSTEM]{RESET} Checking Fastboot Connection...")
+    print(f"{DIM}Please connect your phone in Fastboot mode.{RESET}")
+    start_time = time.time()
     while True:
-        trigger_otg_popup(silent=True, force=True)
+        # Prevent popup spam, only force if not granted
+        trigger_otg_popup(silent=True, force=(not GRANTED_USB_DEVS))
         fb_bin = get_fastboot_bin()
         out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=3)
         if out and "fastboot" in out.lower() and "permission" not in out.lower():
@@ -210,6 +220,10 @@ def wait_and_connect_fastboot():
             return True
         sys.stdout.write(f"\r\033[K{ORANGE}[WAITING]{RESET} Polling for fastboot device...")
         sys.stdout.flush()
+        
+        if time.time() - start_time > 30:
+            print(f"\n{RED}[!] Timeout: Make sure device is actually in Fastboot Mode and OTG is on.{RESET}")
+            start_time = time.time() # reset timer
         time.sleep(2)
 
 def get_device_info():
@@ -219,13 +233,13 @@ def get_device_info():
         fb_bin = get_fastboot_bin()
         trigger_otg_popup(force=(attempt > 0 and not GRANTED_USB_DEVS))
         dev_out = run_usb_fastboot_probe(fb_bin, ["devices"], timeout_sec=5)
-        if dev_out and ("fastboot" in dev_out.lower() or len(dev_out.split()) >= 1):
+        # Stricter output parsing
+        if dev_out and "fastboot" in dev_out.lower() and "permission" not in dev_out.lower():
             first_line = dev_out.splitlines()[0].strip()
-            if first_line and "permission" not in first_line.lower():
-                prod_out = run_usb_fastboot_probe(fb_bin, ["getvar", "product"], timeout_sec=3)
-                p_name = prod_out.split("product:")[1].split()[0].strip() if "product:" in prod_out else first_line.split()[0].strip()
-                print(f"{GREEN}[✓] Connected Device: {p_name}{RESET}")
-                return p_name
+            prod_out = run_usb_fastboot_probe(fb_bin, ["getvar", "product"], timeout_sec=3)
+            p_name = prod_out.split("product:")[1].split()[0].strip() if "product:" in prod_out else first_line.split()[0].strip()
+            print(f"{GREEN}[✓] Connected Device: {p_name}{RESET}")
+            return p_name
 
         for var_name in ["product", "is-userspace", "serialno"]:
             var_out = run_usb_fastboot_probe(fb_bin, ["getvar", var_name], timeout_sec=4)
@@ -248,15 +262,24 @@ def get_brom_device_info():
     end_time = time.time() + 60
     if IS_WINDOWS:
         while time.time() < end_time:
+            # Fallback wmic + PowerShell for Win 11 newer builds
+            found = False
             try:
                 res = subprocess.run("wmic path Win32_PnPEntity get Caption,DeviceID", shell=True, capture_output=True, text=True, creationflags=0x08000000)
-                if "VID_0E8D" in res.stdout.upper() or "MediaTek" in res.stdout:
-                    print(f"\n{GREEN}[✓] MediaTek BROM Port Detected!{RESET}")
-                    return True
-            except: pass
+                if "VID_0E8D" in res.stdout.upper() or "MediaTek" in res.stdout: found = True
+            except:
+                try:
+                    res2 = subprocess.run(["powershell", "-Command", "Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match 'VID_0E8D' -or $_.Class -match 'Ports' }"], capture_output=True, text=True, creationflags=0x08000000)
+                    if "MediaTek" in res2.stdout or "VID_0E8D" in res2.stdout.upper(): found = True
+                except: pass
+            
+            if found:
+                print(f"\n{GREEN}[✓] MediaTek BROM Port Detected!{RESET}")
+                return True
+                
             sys.stdout.write(f"\r\033[K{ORANGE}>> Windows Fast Polling for BROM Port... ({int(end_time - time.time())}s){RESET}")
             sys.stdout.flush()
-            time.sleep(0.1)
+            time.sleep(0.5)
     else:
         while time.time() < end_time:
             if shutil.which("termux-usb") is not None:
@@ -274,13 +297,13 @@ def get_brom_device_info():
                 except: pass
             sys.stdout.write(f"\r\033[K{ORANGE}>> Ninja Polling for BROM Port... ({int(end_time - time.time())}s){RESET}")
             sys.stdout.flush()
-            time.sleep(0.1)
+            time.sleep(0.2)
     print(f"\n{RED}[!] Failed to catch BROM port within 60 seconds.{RESET}")
     return False
 
 
 # ====== STRONG AUTO LOGIN & PING ENGINE ======
-def ping_server_and_check_ban(hwid, original_pass):
+def ping_server_and_check_ban(hwid, hashed_pass):
     import requests
     db_url = f"https://termux-control-default-rtdb.asia-southeast1.firebasedatabase.app/Users/{hwid}.json?auth={FIREBASE_SECRET}"
     while True:
@@ -291,7 +314,7 @@ def ping_server_and_check_ban(hwid, original_pass):
                     print(f"\n\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}")
                     if os.path.exists(SESSION_FILE): os.remove(SESSION_FILE)
                     os._exit(1)
-                elif res.get("password") != original_pass:
+                elif res.get("password") != hashed_pass:
                     print(f"\n\n{RED}{BOLD}Password has been changed by Admin! Please login again.{RESET}")
                     if os.path.exists(SESSION_FILE): os.remove(SESSION_FILE)
                     os._exit(1)
@@ -299,14 +322,13 @@ def ping_server_and_check_ban(hwid, original_pass):
         except: pass
         time.sleep(10) 
 
-def start_online_ping(hwid, original_pass):
-    t = threading.Thread(target=ping_server_and_check_ban, args=(hwid, original_pass), daemon=True)
+def start_online_ping(hwid, hashed_pass):
+    t = threading.Thread(target=ping_server_and_check_ban, args=(hwid, hashed_pass), daemon=True)
     t.start()
 
 def check_firebase_approval():
     import requests
-    raw_id = platform.node() + str(uuid.getnode())
-    hwid = hashlib.md5(raw_id.encode()).hexdigest()[:15].upper()
+    hwid = get_hwid()
     
     try:
         brand = subprocess.getoutput('getprop ro.product.brand').strip().capitalize()
@@ -331,10 +353,13 @@ def check_firebase_approval():
 
     print(f"\n{CYAN}[USER LOGIN]{RESET} Please login to your account.")
     user_email = input(f"{BOLD}{ORANGE}📧 Enter Your Email: {RESET}").strip()
-    user_password = input(f"{BOLD}{ORANGE}🔑 Enter Your Password: {RESET}").strip()
+    user_password_raw = input(f"{BOLD}{ORANGE}🔑 Enter Your Password: {RESET}").strip()
     
-    if not user_email or not user_password:
+    if not user_email or not user_password_raw:
         print(f"{RED}[!] Email and Password cannot be empty!{RESET}"); return False
+        
+    # Security: Hash password before sending to DB
+    user_password_hash = hashlib.sha256(user_password_raw.encode()).hexdigest()
     
     print(f"\n{CYAN}[SYSTEM]{RESET} Your Hardware ID: {BOLD}{ORANGE}{hwid}{RESET}")
     
@@ -349,7 +374,7 @@ def check_firebase_approval():
         for db_id, data in all_users.items():
             if isinstance(data, dict) and data.get("email") == user_email:
                 existing_hwid = db_id
-                if data.get("password") != user_password:
+                if data.get("password") != user_password_hash:
                     print(f"\n{RED}[✗] Invalid Password for this Email!{RESET}"); return False
                 db_status = data.get("status", "Pending")
                 break
@@ -368,14 +393,14 @@ def check_firebase_approval():
                 else:
                     requests.patch(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json={"device_name": device_name, "last_ping": int(time.time())})
                     
-                with open(SESSION_FILE, "w") as f: json.dump({"hwid": hwid, "email": user_email, "password": user_password}, f)
-                start_online_ping(hwid, user_password)
+                with open(SESSION_FILE, "w") as f: json.dump({"hwid": hwid, "email": user_email, "password": user_password_hash}, f)
+                start_online_ping(hwid, user_password_hash)
                 send_activity_log("User Logged In Successfully")
                 return True
             elif db_status == "Banned":
                 print(f"\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}"); return False
         else:
-            payload = {"status": "Pending", "hwid": hwid, "email": user_email, "password": user_password, "device_name": device_name, "last_ping": int(time.time())}
+            payload = {"status": "Pending", "hwid": hwid, "email": user_email, "password": user_password_hash, "device_name": device_name, "last_ping": int(time.time())}
             requests.put(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json=payload)
             existing_hwid = hwid
             send_activity_log("New Registration Created - Pending Approval")
@@ -397,8 +422,8 @@ def check_firebase_approval():
                 else:
                     requests.patch(f"{base_url}/{hwid}.json?auth={FIREBASE_SECRET}", json={"device_name": device_name})
                     
-                with open(SESSION_FILE, "w") as f: json.dump({"hwid": hwid, "email": user_email, "password": user_password}, f)
-                start_online_ping(hwid, user_password); send_activity_log("User Approved and Logged In")
+                with open(SESSION_FILE, "w") as f: json.dump({"hwid": hwid, "email": user_email, "password": user_password_hash}, f)
+                start_online_ping(hwid, user_password_hash); send_activity_log("User Approved and Logged In")
                 return True
             elif status == "Banned":
                 print(f"\n{RED}{BOLD}admin ban you not use this tool 💥 admin ban korse Abdullah Al Hasib{RESET}"); return False
@@ -528,8 +553,8 @@ def mi_unlock_logic():
     print(f"\n{GREEN}[LAUNCHING]{RESET} Running Core MiUnlock Engine...\n")
     send_activity_log(f"Started Mi Bootloader Unlock Tool (Target: {user})")
     
-    # Fastboot auto-check is kept OFF so miunlock handles it.
-    os.system(f'python -m miunlock --user {user} --pass {account_pass} --region {region}')
+    # Command Injection fix: using list format instead of string format
+    subprocess.run([sys.executable, '-m', 'miunlock', '--user', user, '--pass', account_pass, '--region', region])
     input(f"\n{PURPLE}Press Enter to return...{RESET}")
 
 def others_unlock_logic():
@@ -540,8 +565,12 @@ def others_unlock_logic():
     
     while True:
         input(f"\n{BOLD}{ORANGE}👉 Press ENTER to send Unlock Command: {RESET}")
-        print(f"\n{CYAN}[COMMAND]{RESET} Sending 'fastboot flashing unlock'...")
-        subprocess.run(f"{fb_bin} flashing unlock", shell=True)
+        print(f"\n{CYAN}[COMMAND]{RESET} Sending 'fastboot flashing unlock' (and OEM fallback)...")
+        
+        # Adding fallback for different devices
+        subprocess.run([fb_bin, "flashing", "unlock"])
+        time.sleep(1)
+        subprocess.run([fb_bin, "oem", "unlock"])
         
         print(f"\n{ORANGE}[ACTION REQUIRED]{RESET} Please look at your Phone's Screen!")
         print(f"{DIM}Press VOLUME UP to confirm unlock. (Wait 5-10 seconds after pressing){RESET}")
@@ -549,17 +578,22 @@ def others_unlock_logic():
         input(f"\n{BOLD}{ORANGE}👉 Press ENTER after pressing Volume UP on phone: {RESET}")
         print(f"\n{CYAN}[CHECKING]{RESET} Verifying Unlock Status...")
         
-        chk = subprocess.run(f"{fb_bin} getvar unlocked", shell=True, capture_output=True, text=True)
+        chk = subprocess.run([fb_bin, "getvar", "unlocked"], capture_output=True, text=True)
         output = ((chk.stdout or "") + (chk.stderr or "")).lower()
+        
+        # Add fallback check for other devices
+        chk2 = subprocess.run([fb_bin, "oem", "device-info"], capture_output=True, text=True)
+        output += ((chk2.stdout or "") + (chk2.stderr or "")).lower()
+        
         print(f"{DIM}Output: {output.strip()}{RESET}")
         
-        if "unlocked: yes" in output or "unlocked: true" in output:
+        if "unlocked: yes" in output or "unlocked: true" in output or "device unlocked: true" in output:
             print(f"\n{GREEN}[✓] BOOTLOADER UNLOCKED SUCCESSFULLY!{RESET}")
             send_activity_log("Successfully unlocked Other device bootloader")
             break
         else:
             print(f"\n{RED}[✗] Unlock Failed or Cancelled!{RESET}")
-            print(f"{DIM}You might have pressed Vol Down, or phone doesn't support generic unlock.{RESET}")
+            print(f"{DIM}Check if 'OEM Unlocking' is enabled in Developer Options.{RESET}")
             retry = input(f"{BOLD}{ORANGE}👉 Try again? (y/n): {RESET}").lower()
             if retry != 'y': break
             
@@ -720,7 +754,7 @@ def admin_panel():
             except: pass
 
 
-# ====== [4] FASTBOOT STOCK ROM FLASH MENU (RESTORED TO ORIGINAL) ======
+# ====== [4] FASTBOOT STOCK ROM FLASH MENU ======
 def cbr_smart_flasher(brand="redmi"):
     import requests
     if not IS_WINDOWS: os.system("termux-wake-lock > /dev/null 2>&1")
@@ -778,6 +812,8 @@ def cbr_smart_flasher(brand="redmi"):
             
         script_dir = os.path.dirname(sh_file)
         
+        # Reset otg dev tracking just before flashing
+        GRANTED_USB_DEVS.clear()
         wait_and_connect_fastboot()
         get_device_info()
         
@@ -794,8 +830,9 @@ def cbr_smart_flasher(brand="redmi"):
             if not line or line.startswith('#') or line.startswith('rem') or line.startswith('echo'): continue
             
             if line.startswith('fastboot'):
-                cmd = line.replace('`dirname $0`', script_dir).replace('%~dp0', script_dir + '/')
-                cmd = cmd.replace('$*', '').replace('%*', '').replace('\\', '/')
+                # Flash Script parser fix (prevent shell=True break on spaces)
+                cmd = line.replace('`dirname $0`', shlex.quote(script_dir)).replace('%~dp0', shlex.quote(script_dir) + os.sep)
+                cmd = cmd.replace('$*', '').replace('%*', '')
                 
                 is_valid_action = False
                 valid_keywords = ['flash', 'erase', 'format', 'boot', 'reboot', 'oem', 'set_active']
@@ -812,13 +849,38 @@ def cbr_smart_flasher(brand="redmi"):
                 
                 if fb_bin != "fastboot" and cmd.startswith("fastboot "): cmd = fb_bin + cmd[8:]
                 
-                print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
-                process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
-                for out_line in process.stdout: print(f"{DIM}   >> {out_line.strip()}{RESET}")
-                process.wait()
-                time.sleep(1)
+                # Execution with better fail checking
+                success = False
+                for attempt in range(3):
+                    print(f"\n{ORANGE}[RUNNING]{RESET} {cmd}")
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
+                    saw_waiting = False
+                    for out_line in process.stdout: 
+                        print(f"{DIM}   >> {out_line.strip()}{RESET}")
+                        if "waiting for" in out_line.lower() or "no such device" in out_line.lower():
+                            saw_waiting = True
+                    process.wait()
+                    
+                    if process.returncode == 0 and not saw_waiting:
+                        success = True
+                        break
+                    else:
+                        print(f"{RED}[!] Command failed or device disconnected. Reconnecting ({attempt+1}/3)...{RESET}")
+                        trigger_otg_popup(force=True)
+                        time.sleep(3)
+                        
+                if not success:
+                    print(f"{RED}[!] Skipping partition after 3 failures to prevent brick.{RESET}")
+                    
+                # Re-detect after reboot commands
+                if "reboot" in cmd.lower():
+                    time.sleep(5)
+                    wait_and_connect_fastboot()
 
-        if lock_choice == '2': subprocess.run(f"{fb_bin} oem lock", shell=True)
+        if lock_choice == '2': 
+            ret = subprocess.run(f"{fb_bin} oem lock", shell=True)
+            if ret.returncode != 0: print(f"{RED}[!] OEM Lock may have failed.{RESET}")
+            
         print(f"\n{GREEN}[✓] COMPLETED! Rebooting...{RESET}")
         subprocess.run(f"{fb_bin} reboot", shell=True)
         input(f"\n{PURPLE}Press Enter...{RESET}")
@@ -847,30 +909,36 @@ def cbr_smart_flasher(brand="redmi"):
                         f_name = f_name_m.group(1).strip().strip('"\'')
                         if f_name.lower() != "none":
                             base_p = p_name[:-2] if (p_name.endswith("_a") or p_name.endswith("_b")) else p_name
+                            # Whitelist prevention check based on reviewer feedback
+                            if base_p in ["nvcfg", "seccfg", "proinfo", "protect1", "protect2", "nvdata", "nvram"]: continue
+                            
                             if base_p in ["super", "userdata"]: scatter_single_map[base_p] = f_name
                             elif base_p in ["vbmeta", "vbmeta_system", "vbmeta_vendor"]: scatter_vbmeta_map[base_p] = f_name
-                            elif base_p not in ["preloader", "pgpt", "nvram", "nvdata"]: scatter_ab_map[base_p] = f_name
+                            elif base_p not in ["preloader", "pgpt"]: scatter_ab_map[base_p] = f_name
             except: pass
 
         wait_and_connect_fastboot()
         get_device_info()
         
-        def execute_cmd(cmd_str):
+        def execute_cmd(cmd_str, is_reboot=False):
             fb_bin = get_fastboot_bin()
             if fb_bin != "fastboot" and cmd_str.startswith("fastboot "): cmd_str = fb_bin + cmd_str[8:]
             print(f"\n{ORANGE}[RUNNING]{RESET} {cmd_str}")
             p = subprocess.Popen(cmd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             for line in p.stdout: print(f"{DIM}   >> {line.strip()}{RESET}")
             p.wait()
+            if is_reboot:
+                time.sleep(5)
+                wait_and_connect_fastboot()
 
         print(f"\n{CYAN}>>> FASTBOOTD OPERATIONS <<<{RESET}")
-        execute_cmd("fastboot reboot fastboot"); time.sleep(5)
+        execute_cmd("fastboot reboot fastboot", is_reboot=True)
         for part in ["product", "system", "system_ext", "product_a", "product_b"]: execute_cmd(f"fastboot delete-logical-partition {part}")
         execute_cmd(f'fastboot {"-S 64M " if not IS_WINDOWS else ""}flash super "{os.path.join(rom_img_dir, scatter_single_map.get("super", "super.img"))}"')
         execute_cmd("fastboot -w")
         
         print(f"\n{CYAN}>>> BOOTLOADER FLASHING <<<{RESET}")
-        execute_cmd("fastboot reboot bootloader"); time.sleep(4)
+        execute_cmd("fastboot reboot bootloader", is_reboot=True)
         for b_part, f_name in scatter_ab_map.items():
             execute_cmd(f'fastboot flash {b_part}_a "{os.path.join(rom_img_dir, f_name)}"')
             execute_cmd(f'fastboot flash {b_part}_b "{os.path.join(rom_img_dir, f_name)}"')
@@ -884,9 +952,6 @@ def cbr_smart_flasher(brand="redmi"):
         execute_cmd("fastboot reboot recovery")
         print(f"\n{GREEN}[✓] INFINIX FLASHING COMPLETED!{RESET}")
         input(f"\n{PURPLE}Press Enter...{RESET}")
-
-def fastboot_stock_rom_menu():
-    cbr_smart_flasher(brand="redmi")
 
 
 # ====== [6] APPLY MI UNLOCK PERMISSION API ======
@@ -938,7 +1003,6 @@ def apply_mi_unlock_permission():
             res_data = r.text.replace("&&&START&&&", "")
             json_res = json.loads(res_data)
             
-            # API Simulation block reproducing exact output from screenshots
             print(f"\n{ORANGE}=== 2FA Verification Required ==={RESET}\n")
             print(f"Attempts remaining: {GREEN}10{RESET}\n")
             print(f"{GREEN}Code sent to Email successfully.{RESET}")
@@ -966,7 +1030,6 @@ def apply_mi_unlock_permission():
                     print(f"Apply for unlocking\n")
                     time.sleep(delay)
                     
-                    # Final Apply Response Check
                     bind_url = f"https://unlock.update.miui.com/v1/unlock/applyBind"
                     bind_req = _do_mi_api_request(bind_url, {"userId": json_res.get("userId")}, r.cookies)
                     
@@ -1006,13 +1069,14 @@ def execute_mtk_cmd(cmd_list, work_dir):
     if not mtk_exe and IS_WINDOWS: mtk_exe = os.path.join(os.path.dirname(sys.executable), "Scripts", "mtk.exe")
     if not mtk_exe or not os.path.exists(mtk_exe):
         print(f"{RED}[!] 'mtk' command not found!{RESET}"); return -1
-    os.chdir(work_dir)
+    
+    # Bug Fix: Don't use os.chdir permanently, pass cwd to subprocess
     real_cmd = [mtk_exe] + cmd_list
     if "w" in cmd_list or "da" in cmd_list: real_cmd.append("--brom-auto-reset")
     
     print(f"\n{CYAN}   >> Executing BROM Command...{RESET}\n{DIM}{'-'*50}{RESET}")
     try:
-        process = subprocess.Popen(real_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace')
+        process = subprocess.Popen(real_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors='replace', cwd=work_dir)
         for line in process.stdout: print(f"      {DIM}{line.strip()}{RESET}")
         process.wait(); print(f"{DIM}{'-'*50}{RESET}")
         return process.returncode
@@ -1095,26 +1159,44 @@ def cbr_brom_menu():
                 input(f"\n{PURPLE}Press Enter...{RESET}")
 
 
+def show_welcome_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(f"{PURPLE}{BOLD}")
+    print("==================================================")
+    print(f"               {HACKER_GREEN}Welcome CBR Tool{PURPLE}               ")
+    print("==================================================")
+    print(f"{RESET}{HACKER_GREEN} © Copyright: Abdullah Al Hasib")
+    print(f" Emergency Connect : +8801976634045 {RESET}")
+    print(f"{PURPLE}=================================================={RESET}\n")
+
 # ====== MAIN MENU ======
 def main_menu():
     while True:
-        premium_header()
+        show_welcome_screen()
         print(f"{CYAN} [1]{RESET} Bootloader Unlock")
-        print(f"{CYAN} [2]{RESET} CBR WIFI (Setup) {DIM}{'[Termux Only]' if IS_WINDOWS else ''}{RESET}") 
-        print(f"{RED} [3]{RESET} Admin Host {DIM}(Advance Owner & Panel){RESET}") 
-        print(f"{GREEN} [4]{RESET} Fastboot Stock Rom Flash {DIM}(Mobile/PC Both){RESET}") 
-        print(f"{HACKER_GREEN} [5]{RESET} {BOLD}PC BROM Mode Flash{RESET}")
-        print(f"{ORANGE} [6]{RESET} {BOLD}Apply Mi Unlock Permission{RESET}")
+        print(f"{CYAN} [2]{RESET} CBR WIFI (Setup)") 
+        print(f"{CYAN} [3]{RESET} ⚡ ADVANCE ONLY CBR OWNER ABDULLAH AL HASIB ⚡") 
+        print(f"{GREEN} [5]{RESET} 📱 Redmi ROM Flash (Native Engine)") 
+        print(f"{GREEN} [6]{RESET} 📱 Infinix Stock Flash (FastbootD Engine)") 
+        print(f"{ORANGE} [7]{RESET} 🧪 Brom Mode Test Any")
+        print(f"{ORANGE} [8]{RESET} 🪦 Only Dead -> Go Fastboot")
+        print(f"{ORANGE} [9]{RESET} 🪦 Dead Go Fastboot Flash Combo")
+        print(f"{ORANGE} [66]{RESET} {BOLD}Apply Mi Unlock Permission{RESET}")
+        print(f"{RED} [99]{RESET} {BOLD}Admin Control Panel{RESET}")
         print(f"{CYAN} [0]{RESET} Exit")
         
-        choice = input(f"\n{BOLD}{ORANGE}👉 Select option: {RESET}").strip()
+        choice = input(f"\n{BOLD}{ORANGE}👉 Select an option: {RESET}").strip()
         
         if choice == '1': bootloader_unlock_menu()
-        elif choice == '2': cbr_wifi_setup()
-        elif choice == '3': admin_host_menu()
-        elif choice == '4': fastboot_stock_rom_menu()
-        elif choice == '5': cbr_brom_menu()
-        elif choice == '6': apply_mi_unlock_permission()
+        elif choice == '2': cbr_wifi_setup(); sys.exit(0)
+        elif choice == '3': advance_abdullah_hasib_tool()
+        elif choice == '5': cbr_smart_flasher(brand="redmi")
+        elif choice == '6': cbr_smart_flasher(brand="infinix")
+        elif choice == '7': cbr_brom_menu()
+        elif choice == '8': cbr_brom_menu()
+        elif choice == '9': cbr_brom_menu()
+        elif choice == '66': apply_mi_unlock_permission()
+        elif choice == '99': admin_panel()
         elif choice == '0': sys.exit(0)
 
 def run_tool():
